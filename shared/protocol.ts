@@ -78,7 +78,7 @@ export type ServerToClientEvents = {
 };
 
 
-export type AbilityType = "echo" | "time_bubble" | "phase_dash" | "portal_swap";
+export type AbilityType = "echo" | "time_bubble" | "phase_dash";
 
 export type PickupState = {
     id: string;

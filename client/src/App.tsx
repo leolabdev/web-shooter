@@ -99,6 +99,7 @@ function App() {
   const realPlayers = snapshot?.players.filter((player) => !player.isEcho) ?? []
   const hasActiveEcho = (playerId: string) =>
     snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
+  const heldItem = localPlayer?.heldItem ?? null
 
   return (
     <div className="app">
@@ -204,10 +205,12 @@ function App() {
               <p className="hud-value">{localPlayer?.alive ? 'Alive' : 'Down'}</p>
             </div>
             <div>
-              <p className="hud-label">Echo Cooldown</p>
-              <p className="hud-value">
-                {localPlayer?.echoCdMs ? `${Math.ceil(localPlayer.echoCdMs)}ms` : 'Ready'}
-              </p>
+              <p className="hud-label">Held Item</p>
+              <p className="hud-value">{heldItem ?? 'None'}</p>
+            </div>
+            <div>
+              <p className="hud-label">Ability</p>
+              <p className="hud-value">Press Q to use</p>
             </div>
           </header>
 
@@ -226,7 +229,7 @@ function App() {
                   <div className="score-name">
                     <span className={player.id === roomInfo.playerId ? 'you-tag' : undefined}>
                       {player.name}
-                      {hasActiveEcho(player.id) ? ' · Echo' : ''}
+                      {hasActiveEcho(player.id) ? ' (Echo)' : ''}
                     </span>
                   </div>
                   <div className="score-kd">

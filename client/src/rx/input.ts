@@ -63,14 +63,14 @@ export const createInputPackets = (canvas: HTMLCanvasElement) => {
     fromEvent<MouseEvent>(window, 'mouseup').pipe(map(() => false)),
   ).pipe(startWith(false), distinctUntilChanged())
 
-  const echo$ = fromEvent<KeyboardEvent>(window, 'keydown').pipe(
-    filter((event) => (event.code === 'KeyE' || event.key === 'e') && !event.repeat),
+  const item$ = fromEvent<KeyboardEvent>(window, 'keydown').pipe(
+    filter((event) => (event.code === 'KeyQ' || event.key === 'q') && !event.repeat),
     map(() => 1),
     scan((count, inc) => count + inc, 0),
     startWith(0),
   )
 
-  const combined$ = combineLatest({ keys: keys$, aim: aim$, shoot: shoot$, echoCount: echo$ })
+  const combined$ = combineLatest({ keys: keys$, aim: aim$, shoot: shoot$, itemCount: item$ })
 
   return combined$.pipe(
     sampleTime(50),
@@ -78,26 +78,26 @@ export const createInputPackets = (canvas: HTMLCanvasElement) => {
     scan(
       (acc, sample) => {
         const dt = acc.lastTs === 0 ? 50 : sample.timestamp - acc.lastTs
-        const useEcho = sample.value.echoCount !== acc.lastEchoCount
+        const useItem = sample.value.itemCount !== acc.lastItemCount
         const packet: Parameters<ClientToServerEvents['player:input']>[0] = {
           seq: acc.seq + 1,
           dt,
           keys: sample.value.keys,
           aim: sample.value.aim,
           shoot: sample.value.shoot,
-          useEcho,
+          useItem,
         }
         return {
           seq: acc.seq + 1,
           lastTs: sample.timestamp,
-          lastEchoCount: sample.value.echoCount,
+          lastItemCount: sample.value.itemCount,
           packet,
         }
       },
       {
         seq: 0,
         lastTs: 0,
-        lastEchoCount: 0,
+        lastItemCount: 0,
         packet: null as Parameters<ClientToServerEvents['player:input']>[0] | null,
       },
     ),

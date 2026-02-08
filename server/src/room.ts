@@ -2,10 +2,13 @@ import type { Server } from "socket.io";
 import type {
     ClientToServerEvents,
     ServerToClientEvents,
+    AbilityType,
     PlayerState,
     BulletState,
     GameEvent,
+    PickupState,
     StateSnapshot,
+    ZoneState,
 } from "../../shared/protocol";
 import { ARENA } from "../../shared/protocol";
 import { stepBullets } from "./world";
@@ -21,7 +24,7 @@ type PlayerInput = {
     keys: { up: boolean; down: boolean; left: boolean; right: boolean };
     aim: { x: number; y: number };
     shoot: boolean;
-    useEcho: boolean;
+    useItem: boolean;
 };
 
 type BufferedInput = {
@@ -43,16 +46,27 @@ const PLAYER_HP = 3;
 const ECHO_HP = 1;
 const ECHO_DELAY_MS = 900;
 const ECHO_LIFETIME_MS = 3500;
-const ECHO_COOLDOWN_MS = 8000;
+const TIME_BUBBLE_RADIUS = 140;
+const TIME_BUBBLE_LIFETIME_MS = 3000;
+const PHASE_DASH_MS = 250;
+const TIME_BUBBLE_MOVE_MULT = 0.55;
+const TIME_BUBBLE_BULLET_MULT = 0.6;
+const DASH_SPEED_MULT = 2.2;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
+const PICKUP_COUNT = 6;
+const PICKUP_RADIUS = 12;
+const PICKUP_PADDING = 40;
+const PICKUP_RESPAWN_MS = 10000;
 const SPAWN_POINTS = [
     { x: 60, y: 60 },
     { x: ARENA.w - 60, y: 60 },
     { x: 60, y: ARENA.h - 60 },
     { x: ARENA.w - 60, y: ARENA.h - 60 },
 ] as const;
+
+const ABILITIES: AbilityType[] = ["echo", "time_bubble", "phase_dash"];
 
 export class Room {
     readonly id: string;
@@ -62,12 +76,17 @@ export class Room {
     private inputBuffer = new Map<string, BufferedInput[]>();
     private bullets = new Map<string, BulletState>();
     private lastShotAtMs = new Map<string, number>();
-    private echoReadyAtMs = new Map<string, number>();
+    private lastUseItemSeq = new Map<string, number>();
+    private dashUntilMs = new Map<string, number>();
     private echoes = new Map<string, EchoMeta>();
+    private pickups = new Map<string, PickupState>();
+    private zones = new Map<string, ZoneState>();
     private tickTimer: NodeJS.Timeout | null = null;
     private lastTickMs = Date.now();
     private bulletSeq = 0;
     private echoSeq = 0;
+    private pickupSeq = 0;
+    private zoneSeq = 0;
 
     constructor(
         id: string,
@@ -75,6 +94,7 @@ export class Room {
     ) {
         this.id = id;
         this.io = io;
+        this.spawnInitialPickups();
         this.startTick();
     }
 
@@ -91,8 +111,8 @@ export class Room {
             kills: 0,
             deaths: 0,
             isEcho: false,
+            heldItem: null,
         });
-        this.echoReadyAtMs.set(player.id, 0);
     }
 
     removePlayer(playerId: string): void {
@@ -100,7 +120,8 @@ export class Room {
         this.latestInputs.delete(playerId);
         this.inputBuffer.delete(playerId);
         this.lastShotAtMs.delete(playerId);
-        this.echoReadyAtMs.delete(playerId);
+        this.lastUseItemSeq.delete(playerId);
+        this.dashUntilMs.delete(playerId);
         for (const [echoId, meta] of this.echoes.entries()) {
             if (meta.ownerId === playerId) {
                 this.echoes.delete(echoId);
@@ -124,7 +145,11 @@ export class Room {
     }
 
     getPlayerCount(): number {
-        return this.players.size;
+        let count = 0;
+        for (const player of this.players.values()) {
+            if (!player.isEcho) count += 1;
+        }
+        return count;
     }
 
     stop(): void {
@@ -154,27 +179,20 @@ export class Room {
             const input = this.latestInputs.get(playerId);
             if (!input || !player.alive) continue;
             this.bufferInput(playerId, input, now);
-            const dx = (input.keys.right ? 1 : 0) - (input.keys.left ? 1 : 0);
-            const dy = (input.keys.down ? 1 : 0) - (input.keys.up ? 1 : 0);
-            if (dx !== 0 || dy !== 0) {
-                const length = Math.hypot(dx, dy) || 1;
-                const nx = dx / length;
-                const ny = dy / length;
-                player.x += nx * SPEED * dtSeconds;
-                player.y += ny * SPEED * dtSeconds;
-                player.x = clamp(player.x, PLAYER_RADIUS, ARENA.w - PLAYER_RADIUS);
-                player.y = clamp(player.y, PLAYER_RADIUS, ARENA.h - PLAYER_RADIUS);
-            }
+            const moveMult = this.getMoveMultiplier(playerId, player, now);
+            this.applyMovement(player, input, dtSeconds, moveMult);
 
             if (input.shoot) {
                 this.tryShoot(player, input, now, player.id);
             }
 
-            if (input.useEcho) {
-                this.trySpawnEcho(player, now, events);
+            if (input.useItem && this.canUseItem(playerId, input.seq)) {
+                this.activateAbility(player, now, events);
             }
         }
 
+        this.collectPickups();
+        this.updateZones(now);
         this.updateEchoes(now, dtSeconds);
         stepBullets({
             bullets: this.bullets,
@@ -183,15 +201,18 @@ export class Room {
             dtSeconds,
             arena: ARENA,
             onDeath: (playerId) => this.handleDeath(playerId),
+            bulletSpeedMultiplier: (x, y) => this.getBulletMultiplierAt(x, y),
+            isInvulnerable: (playerId) => this.isDashing(playerId, now),
         });
 
-        this.updateEchoCooldowns(now);
         this.broadcastState(now, events);
     }
 
     private broadcastState(timestamp: number, events: GameEvent[]): void {
         const players = Array.from(this.players.values());
         const bullets = Array.from(this.bullets.values());
+        const pickups = Array.from(this.pickups.values());
+        const zones = Array.from(this.zones.values());
         for (const playerId of this.players.keys()) {
             const snapshot: StateSnapshot = {
                 t: timestamp,
@@ -200,6 +221,8 @@ export class Room {
                 players,
                 bullets,
                 events,
+                pickups,
+                zones,
             };
             this.io.to(playerId).emit("game:state", snapshot);
         }
@@ -290,17 +313,158 @@ export class Room {
             }
             const buffered = this.findBufferedInput(meta.ownerId, nowMs - ECHO_DELAY_MS);
             if (!buffered || !echo.alive) continue;
-            this.applyMovement(echo, buffered, dtSeconds);
+            const moveMult = this.getMoveMultiplier(meta.ownerId, echo, nowMs, true);
+            this.applyMovement(echo, buffered, dtSeconds, moveMult);
             if (buffered.shoot) {
                 this.tryShoot(echo, buffered, nowMs, meta.ownerId);
             }
         }
     }
 
+    private canUseItem(playerId: string, seq: number): boolean {
+        const lastSeq = this.lastUseItemSeq.get(playerId);
+        if (lastSeq === seq) return false;
+        this.lastUseItemSeq.set(playerId, seq);
+        return true;
+    }
+
+    private activateAbility(
+        player: PlayerState,
+        nowMs: number,
+        events: GameEvent[],
+    ): void {
+        if (!player.heldItem) return;
+        if (!player.alive) return;
+        if (player.heldItem === "echo") {
+            this.trySpawnEcho(player, nowMs, events);
+        } else if (player.heldItem === "time_bubble") {
+            this.spawnTimeBubble(player, nowMs);
+        } else if (player.heldItem === "phase_dash") {
+            this.dashUntilMs.set(player.id, nowMs + PHASE_DASH_MS);
+        }
+        player.heldItem = null;
+    }
+
+    private spawnTimeBubble(player: PlayerState, nowMs: number): void {
+        const zone: ZoneState = {
+            id: `${this.id}-z-${this.zoneSeq++}`,
+            kind: "time_bubble",
+            x: player.x,
+            y: player.y,
+            r: TIME_BUBBLE_RADIUS,
+            expiresAtMs: nowMs + TIME_BUBBLE_LIFETIME_MS,
+        };
+        this.zones.set(zone.id, zone);
+    }
+
+    private updateZones(nowMs: number): void {
+        for (const [zoneId, zone] of this.zones.entries()) {
+            if (zone.expiresAtMs <= nowMs) {
+                this.zones.delete(zoneId);
+            }
+        }
+    }
+
+    private getMoveMultiplier(
+        playerId: string,
+        player: PlayerState,
+        nowMs: number,
+        isEcho = false,
+    ): number {
+        const zoneMult = this.getTimeBubbleMoveMultAt(player.x, player.y);
+        if (isEcho) return zoneMult;
+        return zoneMult * (this.isDashing(playerId, nowMs) ? DASH_SPEED_MULT : 1);
+    }
+
+    private isDashing(playerId: string, nowMs: number): boolean {
+        const until = this.dashUntilMs.get(playerId) ?? 0;
+        return nowMs < until;
+    }
+
+    private getTimeBubbleMoveMultAt(x: number, y: number): number {
+        for (const zone of this.zones.values()) {
+            if (zone.kind !== "time_bubble") continue;
+            const dx = x - zone.x;
+            const dy = y - zone.y;
+            if (dx * dx + dy * dy <= zone.r * zone.r) {
+                return TIME_BUBBLE_MOVE_MULT;
+            }
+        }
+        return 1;
+    }
+
+    private getBulletMultiplierAt(x: number, y: number): number {
+        for (const zone of this.zones.values()) {
+            if (zone.kind !== "time_bubble") continue;
+            const dx = x - zone.x;
+            const dy = y - zone.y;
+            if (dx * dx + dy * dy <= zone.r * zone.r) {
+                return TIME_BUBBLE_BULLET_MULT;
+            }
+        }
+        return 1;
+    }
+
+    private collectPickups(): void {
+        for (const player of this.players.values()) {
+            if (player.isEcho || !player.alive) continue;
+            if (player.heldItem) continue;
+            for (const pickup of this.pickups.values()) {
+                const dx = player.x - pickup.x;
+                const dy = player.y - pickup.y;
+                const hitRadius = player.r + pickup.r;
+                if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                    player.heldItem = pickup.type;
+                    this.pickups.delete(pickup.id);
+                    this.schedulePickupRespawn();
+                    break;
+                }
+            }
+        }
+    }
+
+    private schedulePickupRespawn(): void {
+        setTimeout(() => {
+            if (this.pickups.size < PICKUP_COUNT) {
+                this.spawnPickup();
+            }
+        }, PICKUP_RESPAWN_MS);
+    }
+
+    private spawnInitialPickups(): void {
+        for (let i = 0; i < PICKUP_COUNT; i += 1) {
+            this.spawnPickup();
+        }
+    }
+
+    private spawnPickup(): void {
+        const type = ABILITIES[Math.floor(Math.random() * ABILITIES.length)];
+        const { x, y } = this.randomPickupPosition();
+        const pickup: PickupState = {
+            id: `${this.id}-p-${this.pickupSeq++}`,
+            type,
+            x,
+            y,
+            r: PICKUP_RADIUS,
+        };
+        this.pickups.set(pickup.id, pickup);
+    }
+
+    private randomPickupPosition(): { x: number; y: number } {
+        const x =
+            PICKUP_PADDING +
+            Math.random() * (ARENA.w - PICKUP_PADDING * 2);
+        const y =
+            PICKUP_PADDING +
+            Math.random() * (ARENA.h - PICKUP_PADDING * 2);
+        return { x, y };
+    }
+
     private applyMovement(
         player: PlayerState,
         input: Pick<PlayerInput, "keys">,
         dtSeconds: number,
+        speedMultiplier: number,
     ): void {
         const dx = (input.keys.right ? 1 : 0) - (input.keys.left ? 1 : 0);
         const dy = (input.keys.down ? 1 : 0) - (input.keys.up ? 1 : 0);
@@ -308,8 +472,8 @@ export class Room {
         const length = Math.hypot(dx, dy) || 1;
         const nx = dx / length;
         const ny = dy / length;
-        player.x += nx * SPEED * dtSeconds;
-        player.y += ny * SPEED * dtSeconds;
+        player.x += nx * SPEED * dtSeconds * speedMultiplier;
+        player.y += ny * SPEED * dtSeconds * speedMultiplier;
         player.x = clamp(player.x, PLAYER_RADIUS, ARENA.w - PLAYER_RADIUS);
         player.y = clamp(player.y, PLAYER_RADIUS, ARENA.h - PLAYER_RADIUS);
     }
@@ -319,8 +483,6 @@ export class Room {
         nowMs: number,
         events: GameEvent[],
     ): void {
-        const readyAt = this.echoReadyAtMs.get(player.id) ?? 0;
-        if (nowMs < readyAt) return;
         if (!player.alive) return;
 
         const echoId = `${this.id}-e-${this.echoSeq++}`;
@@ -337,25 +499,14 @@ export class Room {
             deaths: 0,
             isEcho: true,
             ownerId: player.id,
+            heldItem: null,
         });
         this.echoes.set(echoId, {
             ownerId: player.id,
             expiresAtMs: nowMs + ECHO_LIFETIME_MS,
         });
         this.lastShotAtMs.set(echoId, 0);
-        this.echoReadyAtMs.set(player.id, nowMs + ECHO_COOLDOWN_MS);
         events.push({ type: "spawn_echo", ownerId: player.id, echoId });
-    }
-
-    private updateEchoCooldowns(nowMs: number): void {
-        for (const player of this.players.values()) {
-            if (player.isEcho) {
-                player.echoCdMs = undefined;
-                continue;
-            }
-            const readyAt = this.echoReadyAtMs.get(player.id) ?? 0;
-            player.echoCdMs = Math.max(0, readyAt - nowMs);
-        }
     }
 
     private handleDeath(playerId: string): void {

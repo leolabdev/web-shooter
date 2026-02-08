@@ -10,6 +10,8 @@ type StepParams = {
     dtSeconds: number;
     arena: { w: number; h: number };
     onDeath: (playerId: string) => void;
+    bulletSpeedMultiplier?: (x: number, y: number) => number;
+    isInvulnerable?: (playerId: string) => boolean;
 };
 
 export const stepBullets = ({
@@ -19,12 +21,15 @@ export const stepBullets = ({
     dtSeconds,
     arena,
     onDeath,
+    bulletSpeedMultiplier,
+    isInvulnerable,
 }: StepParams): void => {
     const removeIds = new Set<string>();
 
     for (const bullet of bullets.values()) {
-        bullet.x += bullet.vx * dtSeconds;
-        bullet.y += bullet.vy * dtSeconds;
+        const speedMult = bulletSpeedMultiplier?.(bullet.x, bullet.y) ?? 1;
+        bullet.x += bullet.vx * dtSeconds * speedMult;
+        bullet.y += bullet.vy * dtSeconds * speedMult;
         bullet.ttlMs -= dtSeconds * 1000;
         const out =
             bullet.x < -OUT_OF_BOUNDS_MARGIN ||
@@ -41,6 +46,7 @@ export const stepBullets = ({
         for (const player of players.values()) {
             if (!player.alive) continue;
             if (player.id === bullet.ownerRootId) continue;
+            if (isInvulnerable?.(player.id)) continue;
             const dx = bullet.x - player.x;
             const dy = bullet.y - player.y;
             const hitRadius = player.r + BULLET_RADIUS;

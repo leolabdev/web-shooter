@@ -8,6 +8,9 @@ const COLORS = {
   bullet: '#ffd56b',
   text: '#e8f0ff',
   hpBg: 'rgba(8, 12, 24, 0.85)',
+  pickupEcho: '#7ef1ff',
+  pickupTime: '#7cffb3',
+  pickupDash: '#ffb86b',
 }
 
 const hashString = (value: string) => {
@@ -21,6 +24,18 @@ const hashString = (value: string) => {
 const colorFromId = (id: string) => {
   const hue = hashString(id) % 360
   return `hsl(${hue} 80% 55%)`
+}
+
+const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
+  if (type === 'echo') return 'E'
+  if (type === 'time_bubble') return 'T'
+  return 'D'
+}
+
+const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
+  if (type === 'echo') return COLORS.pickupEcho
+  if (type === 'time_bubble') return COLORS.pickupTime
+  return COLORS.pickupDash
 }
 
 const drawHpBar = (
@@ -139,6 +154,37 @@ export const renderSnapshot = (
   ctx.strokeStyle = COLORS.border
   ctx.lineWidth = 3
   ctx.strokeRect(0, 0, ARENA.w, ARENA.h)
+
+  snapshot.zones.forEach((zone) => {
+    if (zone.kind !== 'time_bubble') return
+    ctx.save()
+    ctx.fillStyle = 'rgba(102, 255, 190, 0.12)'
+    ctx.strokeStyle = 'rgba(102, 255, 190, 0.35)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(zone.x, zone.y, zone.r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  })
+
+  snapshot.pickups.forEach((pickup) => {
+    const color = pickupColor(pickup.type)
+    ctx.save()
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(pickup.x, pickup.y, pickup.r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.fillStyle = '#09101d'
+    ctx.font = '12px "Space Grotesk", "Segoe UI", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(pickupLabel(pickup.type), pickup.x, pickup.y + 0.5)
+    ctx.restore()
+  })
 
   ctx.fillStyle = COLORS.bullet
   snapshot.bullets.forEach((bullet) => {
