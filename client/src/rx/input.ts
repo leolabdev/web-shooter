@@ -1,0 +1,109 @@
+import {
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  fromEvent,
+  map,
+  merge,
+  sampleTime,
+  scan,
+  startWith,
+  timestamp,
+} from 'rxjs'
+import { ARENA, type ClientToServerEvents, type Keys, type Vec2 } from '@shared/protocol'
+
+const initialKeys: Keys = { up: false, down: false, left: false, right: false }
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value))
+
+const mapAimToArena = (event: MouseEvent, canvas: HTMLCanvasElement): Vec2 => {
+  const rect = canvas.getBoundingClientRect()
+  const x = ((event.clientX - rect.left) / rect.width) * ARENA.w
+  const y = ((event.clientY - rect.top) / rect.height) * ARENA.h
+  return { x: clamp(x, 0, ARENA.w), y: clamp(y, 0, ARENA.h) }
+}
+
+export const createInputPackets = (canvas: HTMLCanvasElement) => {
+  const keyEvents$ = merge(
+    fromEvent<KeyboardEvent>(window, 'keydown').pipe(map((event) => ({ event, down: true }))),
+    fromEvent<KeyboardEvent>(window, 'keyup').pipe(map((event) => ({ event, down: false }))),
+  ).pipe(
+    filter(({ event }) => ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)),
+  )
+
+  const keys$ = keyEvents$.pipe(
+    scan((keys, { event, down }) => {
+      if (event.repeat && down) return keys
+      const next = { ...keys }
+      if (event.code === 'KeyW') next.up = down
+      if (event.code === 'KeyS') next.down = down
+      if (event.code === 'KeyA') next.left = down
+      if (event.code === 'KeyD') next.right = down
+      return next
+    }, initialKeys),
+    startWith(initialKeys),
+    distinctUntilChanged(
+      (prev, next) =>
+        prev.up === next.up &&
+        prev.down === next.down &&
+        prev.left === next.left &&
+        prev.right === next.right,
+    ),
+  )
+
+  const aim$ = fromEvent<MouseEvent>(canvas, 'mousemove').pipe(
+    map((event) => mapAimToArena(event, canvas)),
+    startWith({ x: ARENA.w / 2, y: ARENA.h / 2 }),
+    distinctUntilChanged((a, b) => a.x === b.x && a.y === b.y),
+  )
+
+  const shoot$ = merge(
+    fromEvent<MouseEvent>(canvas, 'mousedown').pipe(map(() => true)),
+    fromEvent<MouseEvent>(window, 'mouseup').pipe(map(() => false)),
+  ).pipe(startWith(false), distinctUntilChanged())
+
+  const echo$ = fromEvent<KeyboardEvent>(window, 'keydown').pipe(
+    filter((event) => (event.code === 'KeyE' || event.key === 'e') && !event.repeat),
+    map(() => 1),
+    scan((count, inc) => count + inc, 0),
+    startWith(0),
+  )
+
+  const combined$ = combineLatest({ keys: keys$, aim: aim$, shoot: shoot$, echoCount: echo$ })
+
+  return combined$.pipe(
+    sampleTime(50),
+    timestamp(),
+    scan(
+      (acc, sample) => {
+        const dt = acc.lastTs === 0 ? 50 : sample.timestamp - acc.lastTs
+        const useEcho = sample.value.echoCount !== acc.lastEchoCount
+        const packet: Parameters<ClientToServerEvents['player:input']>[0] = {
+          seq: acc.seq + 1,
+          dt,
+          keys: sample.value.keys,
+          aim: sample.value.aim,
+          shoot: sample.value.shoot,
+          useEcho,
+        }
+        return {
+          seq: acc.seq + 1,
+          lastTs: sample.timestamp,
+          lastEchoCount: sample.value.echoCount,
+          packet,
+        }
+      },
+      {
+        seq: 0,
+        lastTs: 0,
+        lastEchoCount: 0,
+        packet: null as Parameters<ClientToServerEvents['player:input']>[0] | null,
+      },
+    ),
+    map((state) => state.packet),
+    filter(
+      (packet): packet is Parameters<ClientToServerEvents['player:input']>[0] => packet !== null,
+    ),
+  )
+}

@@ -1,42 +1,232 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+.app {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px 60px;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.lobby {
+  width: min(560px, 100%);
+  padding: 32px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(8, 12, 22, 0.8);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 60px rgba(4, 8, 18, 0.5);
+  display: grid;
+  gap: 20px;
+  animation: fadeIn 0.5s ease;
 }
 
-@keyframes logo-spin {
+.lobby-header h1 {
+  margin: 4px 0 6px;
+  font-size: clamp(2rem, 3vw, 2.6rem);
+}
+
+.kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.subtle {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.lobby-form {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.field input {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: rgba(20, 28, 48, 0.7);
+  color: var(--text);
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(90, 123, 255, 0.3);
+}
+
+.lobby-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+button {
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.primary {
+  background: linear-gradient(120deg, var(--accent), var(--accent-strong));
+  color: #0a1220;
+  box-shadow: 0 12px 30px rgba(90, 123, 255, 0.3);
+}
+
+.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.error {
+  color: #ff8b8b;
+  margin: 0;
+}
+
+.game {
+  width: min(1300px, 100%);
+  display: grid;
+  gap: 18px;
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(11, 19, 36, 0.8);
+  animation: riseIn 0.5s ease;
+}
+
+.hud-label {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+}
+
+.hud-value {
+  margin: 4px 0 0;
+  font-size: 1rem;
+}
+
+.canvas-shell {
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(6, 10, 20, 0.8);
+  display: flex;
+  justify-content: center;
+}
+
+.canvas-shell canvas {
+  width: min(100%, 1200px);
+  height: auto;
+  border-radius: 12px;
+}
+
+.scoreboard {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(9, 14, 28, 0.8);
+  padding: 16px 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.scoreboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.scoreboard-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.score-list {
+  display: grid;
+  gap: 8px;
+}
+
+.score-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(18, 26, 48, 0.7);
+}
+
+.score-name {
+  font-weight: 600;
+}
+
+.score-kd {
+  color: var(--text-muted);
+}
+
+.you-tag {
+  color: var(--accent);
+}
+
+@keyframes fadeIn {
   from {
-    transform: rotate(0deg);
+    opacity: 0;
+    transform: translateY(12px);
   }
   to {
-    transform: rotate(360deg);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.card {
-  padding: 2em;
-}
+@media (max-width: 900px) {
+  .app {
+    padding: 24px 16px 40px;
+  }
 
-.read-the-docs {
-  color: #888;
+  .game {
+    width: 100%;
+  }
 }
