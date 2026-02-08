@@ -109,6 +109,7 @@ export class Room {
     readonly id: string;
     readonly maxPlayers: number;
     readonly isPrivate: boolean;
+    readonly fillWithBots: boolean;
     match: MatchState;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
     private players = new Map<string, PlayerState>();
@@ -120,6 +121,9 @@ export class Room {
     private dashUntilMs = new Map<string, number>();
     private shieldUntilMs = new Map<string, number>();
     private novaHitCooldown = new Map<string, number>();
+    private botIds: string[] = [];
+    private botStrafeDir = new Map<string, number>();
+    private botStrafeUntilMs = new Map<string, number>();
     private echoes = new Map<string, EchoMeta>();
     private pickups = new Map<string, PickupState>();
     private zones = new Map<string, ZoneState>();
@@ -135,18 +139,22 @@ export class Room {
     private zoneSeq = 0;
     private novaSeq = 0;
     private strikeSeq = 0;
+    private botSeq = 0;
+    private lastBotCheckMs = 0;
 
     constructor(
         id: string,
         io: Server<ClientToServerEvents, ServerToClientEvents>,
         maxPlayers: number,
         isPrivate: boolean,
+        fillWithBots: boolean,
         hostId: string,
     ) {
         this.id = id;
         this.io = io;
         this.maxPlayers = maxPlayers;
         this.isPrivate = isPrivate;
+        this.fillWithBots = fillWithBots;
         this.match = {
             phase: "lobby",
             hostId,
@@ -169,12 +177,34 @@ export class Room {
             kills: 0,
             deaths: 0,
             isEcho: false,
+            isBot: false,
             heldItem: null,
             shieldHp: 0,
         });
         if (!this.match.hostId) {
             this.match.hostId = player.id;
         }
+    }
+
+    private spawnBot(): void {
+        const botId = `BOT-${this.id}-${this.botSeq++}`;
+        const spawn = this.randomSpawn();
+        this.players.set(botId, {
+            id: botId,
+            name: `Bot #${this.botSeq}`,
+            x: spawn.x,
+            y: spawn.y,
+            r: PLAYER_RADIUS,
+            hp: PLAYER_HP,
+            alive: true,
+            kills: 0,
+            deaths: 0,
+            isEcho: false,
+            isBot: true,
+            heldItem: null,
+            shieldHp: 0,
+        });
+        this.botIds.push(botId);
     }
 
     removePlayer(playerId: string): void {
@@ -209,7 +239,7 @@ export class Room {
     }
 
     isEmpty(): boolean {
-        return this.players.size === 0;
+        return this.getHumanCount() === 0;
     }
 
     getPlayerCount(): number {
@@ -218,6 +248,18 @@ export class Room {
             if (!player.isEcho) count += 1;
         }
         return count;
+    }
+
+    getHumanCount(): number {
+        let count = 0;
+        for (const player of this.players.values()) {
+            if (!player.isEcho && !player.isBot) count += 1;
+        }
+        return count;
+    }
+
+    getBotCount(): number {
+        return this.botIds.length;
     }
 
     getPlayerName(playerId: string): string | null {
@@ -237,6 +279,43 @@ export class Room {
 
     isFull(): boolean {
         return this.getPlayerCount() >= this.maxPlayers;
+    }
+
+    ensureBots(): void {
+        if (!this.fillWithBots) return;
+        if (this.getHumanCount() === 0) {
+            this.clearBots();
+            return;
+        }
+        const desiredBots = Math.max(0, this.maxPlayers - this.getHumanCount());
+        const delta = desiredBots - this.getBotCount();
+        if (delta > 0) {
+            for (let i = 0; i < delta; i += 1) {
+                this.spawnBot();
+            }
+        } else if (delta < 0) {
+            this.removeBotsForSpace(-delta);
+        }
+    }
+
+    removeBotsForSpace(needed: number): void {
+        for (let i = 0; i < needed; i += 1) {
+            const botId = this.botIds.shift();
+            if (!botId) return;
+            this.players.delete(botId);
+            this.latestInputs.delete(botId);
+            this.inputBuffer.delete(botId);
+            this.lastShotAtMs.delete(botId);
+            this.lastUseItemSeq.delete(botId);
+            this.dashUntilMs.delete(botId);
+            this.shieldUntilMs.delete(botId);
+            this.botStrafeDir.delete(botId);
+            this.botStrafeUntilMs.delete(botId);
+        }
+    }
+
+    private clearBots(): void {
+        this.removeBotsForSpace(this.botIds.length);
     }
 
     stop(): void {
@@ -266,6 +345,7 @@ export class Room {
             if (player.isEcho) continue;
             const input = this.latestInputs.get(playerId);
             if (!input || !player.alive) continue;
+            if (player.isBot) continue;
             this.bufferInput(playerId, input, now);
             const moveMult = this.getMoveMultiplier(playerId, player, now);
             this.applyMovement(player, input, dtSeconds, moveMult);
@@ -279,6 +359,7 @@ export class Room {
             }
         }
 
+        this.updateBots(now, dtSeconds, isPlaying);
         this.updatePendingStrikes(now);
         this.updateShields(now);
 
@@ -306,6 +387,11 @@ export class Room {
         if (this.match.phase === "playing" && this.match.endsAtMs && now >= this.match.endsAtMs) {
             this.match.phase = "ended";
             this.io.to(this.id).emit("match:toast", { message: "Match ended" });
+        }
+
+        if (this.fillWithBots && now - this.lastBotCheckMs > 1000) {
+            this.lastBotCheckMs = now;
+            this.ensureBots();
         }
 
         this.broadcastState(now, events);
@@ -424,6 +510,97 @@ export class Room {
                 this.tryShoot(echo, buffered, nowMs, meta.ownerId);
             }
         }
+    }
+
+    private updateBots(nowMs: number, dtSeconds: number, allowShoot: boolean): void {
+        for (const botId of this.botIds) {
+            const bot = this.players.get(botId);
+            if (!bot || !bot.alive) continue;
+            const target = this.findBotTarget(botId);
+            if (!target) continue;
+            const input = this.buildBotInput(botId, bot, target, nowMs);
+            const moveMult = this.getMoveMultiplier(botId, bot, nowMs);
+            this.applyMovement(bot, input, dtSeconds, moveMult);
+            if (allowShoot && input.shoot) {
+                this.tryShoot(bot, input, nowMs, bot.id);
+            }
+        }
+    }
+
+    private findBotTarget(botId: string): PlayerState | null {
+        const humans = Array.from(this.players.values()).filter(
+            (player) => !player.isEcho && !player.isBot && player.alive,
+        );
+        const pool =
+            humans.length > 0
+                ? humans
+                : Array.from(this.players.values()).filter(
+                      (player) => player.id !== botId && player.alive,
+                  );
+        if (pool.length === 0) return null;
+        const bot = this.players.get(botId);
+        if (!bot) return null;
+        let best = pool[0];
+        let bestDist = distanceSq(bot.x, bot.y, best.x, best.y);
+        for (let i = 1; i < pool.length; i += 1) {
+            const candidate = pool[i];
+            const dist = distanceSq(bot.x, bot.y, candidate.x, candidate.y);
+            if (dist < bestDist) {
+                best = candidate;
+                bestDist = dist;
+            }
+        }
+        return best;
+    }
+
+    private buildBotInput(
+        botId: string,
+        bot: PlayerState,
+        target: PlayerState,
+        nowMs: number,
+    ): PlayerInput {
+        const dx = target.x - bot.x;
+        const dy = target.y - bot.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        let moveX = 0;
+        let moveY = 0;
+        if (dist > 280) {
+            moveX = dx / dist;
+            moveY = dy / dist;
+        } else if (dist < 180) {
+            moveX = -dx / dist;
+            moveY = -dy / dist;
+        } else {
+            const until = this.botStrafeUntilMs.get(botId) ?? 0;
+            if (nowMs > until) {
+                const dir = this.botStrafeDir.get(botId) ?? 1;
+                this.botStrafeDir.set(botId, dir * -1);
+                this.botStrafeUntilMs.set(botId, nowMs + 700);
+            }
+            const dir = this.botStrafeDir.get(botId) ?? 1;
+            moveX = (-dy / dist) * dir;
+            moveY = (dx / dist) * dir;
+        }
+
+        const keys = {
+            up: moveY < -0.2,
+            down: moveY > 0.2,
+            left: moveX < -0.2,
+            right: moveX > 0.2,
+        };
+        const jitterX = (Math.random() - 0.5) * 36;
+        const jitterY = (Math.random() - 0.5) * 36;
+        const aim = { x: target.x + jitterX, y: target.y + jitterY };
+        const shoot = dist < 650;
+
+        return {
+            seq: nowMs,
+            dt: 50,
+            keys,
+            aim,
+            shoot,
+            useItem: false,
+        };
     }
 
     private canUseItem(playerId: string, seq: number): boolean {
@@ -1021,3 +1198,9 @@ export class Room {
 
 const clamp = (value: number, min: number, max: number): number =>
     Math.max(min, Math.min(max, value));
+
+const distanceSq = (ax: number, ay: number, bx: number, by: number): number => {
+    const dx = ax - bx;
+    const dy = ay - by;
+    return dx * dx + dy * dy;
+};

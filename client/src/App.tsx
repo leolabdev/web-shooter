@@ -33,7 +33,13 @@ function App() {
   const [pingMs, setPingMs] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rooms, setRooms] = useState<
-    { roomId: string; playerCount: number; maxPlayers: number; isPrivate: boolean }[]
+    {
+      roomId: string
+      playerCount: number
+      maxPlayers: number
+      isPrivate: boolean
+      fillWithBots: boolean
+    }[]
   >([])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatOpen, setChatOpen] = useState(false)
@@ -43,6 +49,7 @@ function App() {
   const [durationSec, setDurationSec] = useState(300)
   const [maxPlayers, setMaxPlayers] = useState(6)
   const [isPrivate, setIsPrivate] = useState(false)
+  const [fillWithBots, setFillWithBots] = useState(false)
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fxRef = useRef<Map<string, FxState>>(new Map())
@@ -409,6 +416,14 @@ function App() {
               />
               <span>Private room</span>
             </label>
+            <label className="field checkbox">
+              <input
+                type="checkbox"
+                checked={fillWithBots}
+                onChange={(event) => setFillWithBots(event.target.checked)}
+              />
+              <span>Fill with bots</span>
+            </label>
           </div>
 
           <div className="lobby-actions">
@@ -420,6 +435,7 @@ function App() {
                   name: name.trim(),
                   maxPlayers,
                   isPrivate,
+                  fillWithBots,
                 })
               }
             >
@@ -451,6 +467,7 @@ function App() {
                       <p className="room-id">{room.roomId}</p>
                       <p className="room-meta">
                         {room.playerCount}/{room.maxPlayers} pilots
+                        {room.fillWithBots ? ' · Bots' : ''}
                       </p>
                     </div>
                     <button
@@ -583,6 +600,7 @@ function App() {
                     <div className="score-name">
                       <span className={player.id === roomInfo.playerId ? 'you-tag' : undefined}>
                         {player.name}
+                        {player.isBot ? ' (BOT)' : ''}
                         {hasActiveEcho(player.id) ? ' (Echo)' : ''}
                       </span>
                     </div>

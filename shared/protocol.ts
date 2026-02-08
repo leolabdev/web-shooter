@@ -17,6 +17,7 @@ export type PlayerState = {
 
     isEcho: boolean;
     ownerId?: string;
+    isBot?: boolean;
 
     heldItem?: AbilityType | null;
     shieldHp?: number;
@@ -73,6 +74,7 @@ export type ClientToServerEvents = {
         name: string;
         maxPlayers: number;
         isPrivate?: boolean;
+        fillWithBots?: boolean;
     }) => void;
     "room:join": (payload: { roomId: string; name: string }) => void;
 
@@ -106,6 +108,7 @@ export type ServerToClientEvents = {
             playerCount: number;
             maxPlayers: number;
             isPrivate: boolean;
+            fillWithBots: boolean;
         }[];
     }) => void;
     "game:state": (payload: StateSnapshot) => void;

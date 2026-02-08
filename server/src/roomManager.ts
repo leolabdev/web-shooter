@@ -8,6 +8,7 @@ import { Room, RoomPlayer } from "./room";
 type CreateRoomOptions = {
     maxPlayers: number;
     isPrivate: boolean;
+    fillWithBots: boolean;
 };
 
 export class RoomManager {
@@ -26,6 +27,7 @@ export class RoomManager {
             this.io,
             options.maxPlayers,
             options.isPrivate,
+            options.fillWithBots,
             player.id,
         );
         room.addPlayer(player);
@@ -92,6 +94,7 @@ export class RoomManager {
         playerCount: number;
         maxPlayers: number;
         isPrivate: boolean;
+        fillWithBots: boolean;
     }[] {
         return Array.from(this.rooms.values())
             .filter((room) => !room.isPrivate)
@@ -100,6 +103,7 @@ export class RoomManager {
                 playerCount: room.getPlayerCount(),
                 maxPlayers: room.maxPlayers,
                 isPrivate: room.isPrivate,
+                fillWithBots: room.fillWithBots,
             }));
     }
 }

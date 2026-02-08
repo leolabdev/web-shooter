@@ -34,14 +34,19 @@ io.on("connection", (socket) => {
     console.log("connected", socket.id);
     socket.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
 
-    socket.on("room:create", ({ name, maxPlayers, isPrivate }) => {
+    socket.on("room:create", ({ name, maxPlayers, isPrivate, fillWithBots }) => {
         const room = roomManager.createRoom(
             { id: socket.id, name: normalizeName(name) },
-            { maxPlayers: clampMaxPlayers(maxPlayers), isPrivate: !!isPrivate },
+            {
+                maxPlayers: clampMaxPlayers(maxPlayers),
+                isPrivate: !!isPrivate,
+                fillWithBots: !!fillWithBots,
+            },
         );
         socket.join(room.id);
         socket.emit("room:created", { roomId: room.id, playerId: socket.id });
         socket.emit("chat:history", { messages: room.getChatHistory() });
+        room.ensureBots();
         broadcastRoomsList();
     });
 
@@ -51,6 +56,9 @@ io.on("connection", (socket) => {
         if (!room) {
             socket.emit("error", { message: "Room not found." });
             return;
+        }
+        if (room.isFull()) {
+            room.removeBotsForSpace(1);
         }
         if (room.isFull()) {
             socket.emit("error", { message: "Room is full." });
@@ -67,6 +75,7 @@ io.on("connection", (socket) => {
         socket.join(joinedRoom.id);
         socket.emit("room:joined", { roomId: joinedRoom.id, playerId: socket.id });
         socket.emit("chat:history", { messages: joinedRoom.getChatHistory() });
+        joinedRoom.ensureBots();
         broadcastRoomsList();
     });
 
@@ -130,7 +139,11 @@ io.on("connection", (socket) => {
     });
 
     socket.on("disconnect", () => {
-        roomManager.removePlayer(socket.id);
+        const roomId = roomManager.removePlayer(socket.id);
+        if (roomId) {
+            const room = roomManager.getRoom(roomId);
+            room?.ensureBots();
+        }
         broadcastRoomsList();
         console.log("disconnected", socket.id);
     });
