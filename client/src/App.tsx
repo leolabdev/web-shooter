@@ -5,6 +5,7 @@ import {
   interval,
   map,
   shareReplay,
+  Subject,
   Subscription,
   withLatestFrom,
 } from 'rxjs'
@@ -39,6 +40,7 @@ function App() {
   const chatInputRef = useRef<HTMLInputElement | null>(null)
   const chatOpenRef = useRef(false)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const resetKeysRef = useRef(new Subject<void>())
 
   useEffect(() => {
     const conn = connectSocket()
@@ -100,9 +102,10 @@ function App() {
       }),
     )
     subs.add(
-      createInputPackets(canvas, { isKeyboardEnabled: () => !chatOpenRef.current }).subscribe(
-        (packet) => connection.send.input(packet),
-      ),
+      createInputPackets(canvas, {
+        isChatActive: () => chatOpenRef.current,
+        resetKeys$: resetKeysRef.current,
+      }).subscribe((packet) => connection.send.input(packet)),
     )
     subs.add(
       animationFrames()
@@ -129,10 +132,26 @@ function App() {
     snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
   const heldItem = localPlayer?.heldItem ?? null
 
+  const openChat = () => {
+    chatOpenRef.current = true
+    setChatOpen(true)
+  }
+
+  const closeChat = () => {
+    chatOpenRef.current = false
+    setChatOpen(false)
+    setChatText('')
+    resetKeysRef.current.next()
+    canvasRef.current?.focus()
+  }
+
   useEffect(() => {
     chatOpenRef.current = chatOpen
     if (chatOpen) {
       chatInputRef.current?.focus()
+    } else {
+      resetKeysRef.current.next()
+      canvasRef.current?.focus()
     }
   }, [chatOpen])
 
@@ -150,11 +169,10 @@ function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Enter' && !chatOpenRef.current) {
         event.preventDefault()
-        setChatOpen(true)
+        openChat()
       } else if (event.code === 'Escape' && chatOpenRef.current) {
         event.preventDefault()
-        setChatOpen(false)
-        setChatText('')
+        closeChat()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -166,7 +184,7 @@ function App() {
     if (!text || !connection) return
     connection.send.chatSend({ text })
     setChatText('')
-    setChatOpen(false)
+    closeChat()
   }
 
   return (
@@ -313,7 +331,7 @@ function App() {
 
           <div className="game-main">
             <div className="canvas-shell">
-              <canvas ref={canvasRef} width={ARENA.w} height={ARENA.h} />
+              <canvas ref={canvasRef} width={ARENA.w} height={ARENA.h} tabIndex={0} />
             </div>
           </div>
 
@@ -368,17 +386,17 @@ function App() {
                         submitChat()
                       } else if (event.code === 'Escape') {
                         event.preventDefault()
-                        setChatOpen(false)
-                        setChatText('')
+                        closeChat()
                       }
                     }}
+                    onBlur={() => closeChat()}
                     placeholder="Type message..."
                   />
                 ) : (
                   <button
                     className="ghost"
                     type="button"
-                    onClick={() => setChatOpen(true)}
+                    onClick={() => openChat()}
                   >
                     Press Enter to chat
                   </button>

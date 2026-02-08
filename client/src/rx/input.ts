@@ -5,6 +5,7 @@ import {
   fromEvent,
   map,
   merge,
+  type Observable,
   sampleTime,
   scan,
   startWith,
@@ -26,26 +27,36 @@ const mapAimToArena = (event: MouseEvent, canvas: HTMLCanvasElement): Vec2 => {
 
 export const createInputPackets = (
   canvas: HTMLCanvasElement,
-  options?: { isKeyboardEnabled?: () => boolean },
+  options?: { isChatActive?: () => boolean; resetKeys$?: Observable<void> },
 ) => {
+  const reset$ = options?.resetKeys$?.pipe(map(() => ({ type: 'reset' as const })))
+
   const keyEvents$ = merge(
     fromEvent<KeyboardEvent>(window, 'keydown').pipe(map((event) => ({ event, down: true }))),
     fromEvent<KeyboardEvent>(window, 'keyup').pipe(map((event) => ({ event, down: false }))),
-  ).pipe(
-    filter(({ event }) => {
-      if (options?.isKeyboardEnabled && !options.isKeyboardEnabled()) return false
-      return ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)
-    }),
+  ).pipe(filter(({ event }) => ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)))
+
+  const keyActions$ = merge(
+    keyEvents$.pipe(
+      map(({ event, down }) => ({
+        type: 'key' as const,
+        code: event.code,
+        down,
+        repeat: event.repeat,
+      })),
+    ),
+    reset$ ?? [],
   )
 
-  const keys$ = keyEvents$.pipe(
-    scan((keys, { event, down }) => {
-      if (event.repeat && down) return keys
+  const keys$ = keyActions$.pipe(
+    scan((keys, action) => {
+      if (action.type === 'reset') return initialKeys
+      if (action.repeat && action.down) return keys
       const next = { ...keys }
-      if (event.code === 'KeyW') next.up = down
-      if (event.code === 'KeyS') next.down = down
-      if (event.code === 'KeyA') next.left = down
-      if (event.code === 'KeyD') next.right = down
+      if (action.code === 'KeyW') next.up = action.down
+      if (action.code === 'KeyS') next.down = action.down
+      if (action.code === 'KeyA') next.left = action.down
+      if (action.code === 'KeyD') next.right = action.down
       return next
     }, initialKeys),
     startWith(initialKeys),
@@ -70,10 +81,7 @@ export const createInputPackets = (
   ).pipe(startWith(false), distinctUntilChanged())
 
   const item$ = fromEvent<KeyboardEvent>(window, 'keydown').pipe(
-    filter((event) => {
-      if (options?.isKeyboardEnabled && !options.isKeyboardEnabled()) return false
-      return (event.code === 'KeyQ' || event.key === 'q') && !event.repeat
-    }),
+    filter((event) => (event.code === 'KeyQ' || event.key === 'q') && !event.repeat),
     map(() => 1),
     scan((count, inc) => count + inc, 0),
     startWith(0),
@@ -88,13 +96,14 @@ export const createInputPackets = (
       (acc, sample) => {
         const dt = acc.lastTs === 0 ? 50 : sample.timestamp - acc.lastTs
         const useItem = sample.value.itemCount !== acc.lastItemCount
+        const chatActive = options?.isChatActive?.() ?? false
         const packet: Parameters<ClientToServerEvents['player:input']>[0] = {
           seq: acc.seq + 1,
           dt,
-          keys: sample.value.keys,
+          keys: chatActive ? initialKeys : sample.value.keys,
           aim: sample.value.aim,
-          shoot: sample.value.shoot,
-          useItem,
+          shoot: chatActive ? false : sample.value.shoot,
+          useItem: chatActive ? false : useItem,
         }
         return {
           seq: acc.seq + 1,

@@ -227,6 +227,10 @@ button:disabled {
   border-radius: 12px;
 }
 
+.canvas-shell canvas:focus {
+  outline: none;
+}
+
 .game-main {
   display: flex;
   flex-direction: column;
