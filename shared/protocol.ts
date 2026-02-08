@@ -32,6 +32,7 @@ export type BulletState = {
     vx: number;
     vy: number;
     ttlMs: number;
+    burstId?: string;
 };
 
 export type GameEvent =
@@ -40,7 +41,8 @@ export type GameEvent =
     | { type: "spawn_echo"; ownerId: string; echoId: string }
     | { type: "beam_fire"; byId: string; from: Vec2; to: Vec2 }
     | { type: "shield_break"; id: string }
-    | { type: "shield_hit"; id: string; hpLeft: number };
+    | { type: "shield_hit"; id: string; hpLeft: number }
+    | { type: "nova_fire"; byId: string };
 
 export type MatchPhase = "lobby" | "playing" | "ended";
 
@@ -112,7 +114,13 @@ export type ServerToClientEvents = {
 };
 
 
-export type AbilityType = "echo" | "time_bubble" | "phase_dash" | "shield" | "rift_sniper";
+export type AbilityType =
+    | "echo"
+    | "time_bubble"
+    | "phase_dash"
+    | "shield"
+    | "rift_sniper"
+    | "pulse_nova";
 
 export type PickupState = {
     id: string;

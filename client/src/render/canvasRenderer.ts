@@ -12,6 +12,7 @@ const COLORS = {
   pickupEcho: '#7ef1ff',
   pickupTime: '#7cffb3',
   pickupDash: '#ffb86b',
+  pickupNova: '#ffd66b',
   pickupShield: '#7cffb3',
   pickupRift: '#ff7ad9',
   shieldRing: 'rgba(124, 255, 179, 0.7)',
@@ -23,6 +24,7 @@ const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'time_bubble') return 'T'
   if (type === 'shield') return 'S'
   if (type === 'rift_sniper') return 'R'
+  if (type === 'pulse_nova') return 'N'
   return 'D'
 }
 
@@ -31,6 +33,7 @@ const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'time_bubble') return COLORS.pickupTime
   if (type === 'shield') return COLORS.pickupShield
   if (type === 'rift_sniper') return COLORS.pickupRift
+  if (type === 'pulse_nova') return COLORS.pickupNova
   return COLORS.pickupDash
 }
 
@@ -152,12 +155,19 @@ export type BeamFx = {
   until: number
 }
 
+export type NovaFx = {
+  x: number
+  y: number
+  until: number
+}
+
 export const renderSnapshot = (
   ctx: CanvasRenderingContext2D,
   snapshot: StateSnapshot,
   fxMap: Map<string, FxState>,
   nowMs: number,
   beams: BeamFx[] = [],
+  novas: NovaFx[] = [],
 ) => {
   ctx.clearRect(0, 0, ARENA.w, ARENA.h)
   ctx.fillStyle = COLORS.background
@@ -214,6 +224,19 @@ export const renderSnapshot = (
     ctx.beginPath()
     ctx.moveTo(beam.from.x, beam.from.y)
     ctx.lineTo(beam.to.x, beam.to.y)
+    ctx.stroke()
+    ctx.restore()
+  })
+
+  novas.forEach((nova) => {
+    if (nova.until <= nowMs) return
+    const t = Math.max(0, Math.min(1, (nova.until - nowMs) / 120))
+    ctx.save()
+    ctx.strokeStyle = 'rgba(255, 214, 140, 0.6)'
+    ctx.lineWidth = 2
+    ctx.globalAlpha = t
+    ctx.beginPath()
+    ctx.arc(nova.x, nova.y, 20 + (1 - t) * 30, 0, Math.PI * 2)
     ctx.stroke()
     ctx.restore()
   })

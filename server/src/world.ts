@@ -9,11 +9,13 @@ type StepParams = {
     events: GameEvent[];
     dtSeconds: number;
     arena: { w: number; h: number };
+    nowMs: number;
     onDeath: (playerId: string) => void;
     bulletSpeedMultiplier?: (x: number, y: number) => number;
     isInvulnerable?: (playerId: string) => boolean;
     allowDamage?: boolean;
     shieldHit?: (playerId: string, byRootId: string) => boolean;
+    shouldIgnoreHit?: (bullet: BulletState, playerId: string, nowMs: number) => boolean;
 };
 
 export const stepBullets = ({
@@ -22,11 +24,13 @@ export const stepBullets = ({
     events,
     dtSeconds,
     arena,
+    nowMs,
     onDeath,
     bulletSpeedMultiplier,
     isInvulnerable,
     allowDamage = true,
     shieldHit,
+    shouldIgnoreHit,
 }: StepParams): void => {
     const removeIds = new Set<string>();
 
@@ -58,6 +62,10 @@ export const stepBullets = ({
             if (!player.alive) continue;
             if (player.id === bullet.ownerRootId) continue;
             if (isInvulnerable?.(player.id)) continue;
+            if (shouldIgnoreHit?.(bullet, player.id, nowMs)) {
+                removeIds.add(bullet.id);
+                break;
+            }
             if (shieldHit?.(player.id, bullet.ownerRootId)) {
                 removeIds.add(bullet.id);
                 break;

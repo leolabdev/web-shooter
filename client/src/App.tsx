@@ -14,7 +14,7 @@ import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
 import { createSnapshotInterpolator } from './rx/interpolation'
-import { renderSnapshot, type BeamFx } from './render/canvasRenderer'
+import { renderSnapshot, type BeamFx, type NovaFx } from './render/canvasRenderer'
 import { colorFromId } from './render/colors'
 import { updateFxRegistry, type FxState } from './render/fx'
 
@@ -44,6 +44,7 @@ function App() {
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const resetKeysRef = useRef(new Subject<void>())
   const beamsRef = useRef<BeamFx[]>([])
+  const novasRef = useRef<NovaFx[]>([])
 
   useEffect(() => {
     const conn = connectSocket()
@@ -110,6 +111,11 @@ function App() {
               to: event.to,
               until: now + 120,
             })
+          } else if (event.type === 'nova_fire') {
+            const player = nextSnapshot.players.find((entry) => entry.id === event.byId)
+            if (player) {
+              novasRef.current.push({ x: player.x, y: player.y, until: now + 120 })
+            }
           }
         })
         interpolatorRef.current.pushSnapshot(nextSnapshot, performance.now())
@@ -128,10 +134,25 @@ function App() {
         .subscribe(([frame, latest]) => {
           const renderState = interpolatorRef.current.getInterpolatedState(frame.timestamp)
           beamsRef.current = beamsRef.current.filter((beam) => beam.until > frame.timestamp)
+          novasRef.current = novasRef.current.filter((nova) => nova.until > frame.timestamp)
           if (renderState) {
-            renderSnapshot(ctx, renderState, fxRef.current, frame.timestamp, beamsRef.current)
+            renderSnapshot(
+              ctx,
+              renderState,
+              fxRef.current,
+              frame.timestamp,
+              beamsRef.current,
+              novasRef.current,
+            )
           } else {
-            renderSnapshot(ctx, latest, fxRef.current, frame.timestamp, beamsRef.current)
+            renderSnapshot(
+              ctx,
+              latest,
+              fxRef.current,
+              frame.timestamp,
+              beamsRef.current,
+              novasRef.current,
+            )
           }
         }),
     )

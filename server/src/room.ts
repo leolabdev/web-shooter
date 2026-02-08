@@ -55,6 +55,11 @@ const TIME_BUBBLE_MOVE_MULT = 0.55;
 const TIME_BUBBLE_BULLET_MULT = 0.6;
 const DASH_SPEED_MULT = 2.2;
 const SHIELD_DURATION_MS = 5000;
+const NOVA_BULLET_COUNT = 18;
+const NOVA_BULLET_SPEED = 420;
+const NOVA_BULLET_TTL_MS = 900;
+const NOVA_SPAWN_OFFSET = 10;
+const NOVA_HIT_COOLDOWN_MS = 150;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
@@ -77,6 +82,7 @@ const ABILITIES: AbilityType[] = [
     "phase_dash",
     "shield",
     "rift_sniper",
+    "pulse_nova",
 ];
 
 export class Room {
@@ -93,6 +99,7 @@ export class Room {
     private lastUseItemSeq = new Map<string, number>();
     private dashUntilMs = new Map<string, number>();
     private shieldUntilMs = new Map<string, number>();
+    private novaHitCooldown = new Map<string, number>();
     private echoes = new Map<string, EchoMeta>();
     private pickups = new Map<string, PickupState>();
     private zones = new Map<string, ZoneState>();
@@ -103,6 +110,7 @@ export class Room {
     private echoSeq = 0;
     private pickupSeq = 0;
     private zoneSeq = 0;
+    private novaSeq = 0;
 
     constructor(
         id: string,
@@ -256,11 +264,14 @@ export class Room {
             events: isPlaying ? events : [],
             dtSeconds,
             arena: ARENA,
+            nowMs: now,
             onDeath: (playerId) => this.handleDeath(playerId),
             bulletSpeedMultiplier: (x, y) => this.getBulletMultiplierAt(x, y),
             isInvulnerable: (playerId) => this.isDashing(playerId, now),
             shieldHit: (playerId, byRootId) =>
                 this.handleShieldHit(playerId, byRootId, events),
+            shouldIgnoreHit: (bullet, playerId, nowMs) =>
+                this.shouldIgnoreNovaHit(bullet, playerId, nowMs),
             allowDamage: isPlaying,
         });
 
@@ -415,6 +426,8 @@ export class Room {
             if (!fired) {
                 return;
             }
+        } else if (player.heldItem === "pulse_nova") {
+            this.firePulseNova(player, nowMs, events);
         }
         player.heldItem = null;
     }
@@ -463,6 +476,30 @@ export class Room {
             this.killEntity(target, player.id, events);
         }
         return true;
+    }
+
+    private firePulseNova(player: PlayerState, nowMs: number, events: GameEvent[]): void {
+        if (player.isEcho) return;
+        const burstId = `${this.id}-n-${this.novaSeq++}`;
+        const spawnRadius = player.r + NOVA_SPAWN_OFFSET;
+        for (let i = 0; i < NOVA_BULLET_COUNT; i += 1) {
+            const angle = (i / NOVA_BULLET_COUNT) * Math.PI * 2;
+            const nx = Math.cos(angle);
+            const ny = Math.sin(angle);
+            const bullet: BulletState = {
+                id: `${this.id}-b-${this.bulletSeq++}`,
+                ownerId: player.id,
+                ownerRootId: player.id,
+                x: player.x + nx * spawnRadius,
+                y: player.y + ny * spawnRadius,
+                vx: nx * NOVA_BULLET_SPEED,
+                vy: ny * NOVA_BULLET_SPEED,
+                ttlMs: NOVA_BULLET_TTL_MS,
+                burstId,
+            };
+            this.bullets.set(bullet.id, bullet);
+        }
+        events.push({ type: "nova_fire", byId: player.id });
     }
 
     private spawnTimeBubble(player: PlayerState, nowMs: number): void {
@@ -698,6 +735,31 @@ export class Room {
             this.breakShield(playerId, events);
         }
         return true;
+    }
+
+    private shouldIgnoreNovaHit(
+        bullet: BulletState,
+        playerId: string,
+        nowMs: number,
+    ): boolean {
+        if (!bullet.burstId) return false;
+        const key = `${bullet.burstId}:${playerId}`;
+        const lastHit = this.novaHitCooldown.get(key) ?? 0;
+        if (nowMs - lastHit < NOVA_HIT_COOLDOWN_MS) {
+            return true;
+        }
+        this.novaHitCooldown.set(key, nowMs);
+        this.gcNovaCooldowns(nowMs);
+        return false;
+    }
+
+    private gcNovaCooldowns(nowMs: number): void {
+        const cutoff = nowMs - 1000;
+        for (const [key, value] of this.novaHitCooldown.entries()) {
+            if (value < cutoff) {
+                this.novaHitCooldown.delete(key);
+            }
+        }
     }
 
     private killEntity(target: PlayerState, byRootId: string, events: GameEvent[]): void {
