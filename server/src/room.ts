@@ -201,7 +201,8 @@ export class Room {
     }
 
     private spawnBot(): void {
-        const botId = `BOT-${this.id}-${this.botSeq++}`;
+        const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+        const botId = `BOT-${this.id}-${this.botSeq++}-${suffix}`;
         const spawn = this.randomSpawn();
         this.players.set(botId, {
             id: botId,

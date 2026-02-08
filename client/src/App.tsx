@@ -638,8 +638,11 @@ function App() {
               <div className="score-list">
                 {realPlayers.map((player) => (
                   <div key={player.id} className="score-row">
-                    <div className="score-name">
-                      <span className={player.id === roomInfo.playerId ? 'you-tag' : undefined}>
+                  <div className="score-name">
+                      <span
+                        className={player.id === roomInfo.playerId ? 'you-tag' : undefined}
+                        style={{ color: colorFromId(colorIdForPlayer(player)) }}
+                      >
                         {player.name}
                         {player.isBot ? ' (BOT)' : ''}
                         {hasActiveEcho(player.id) ? ' (Echo)' : ''}
@@ -708,3 +711,5 @@ function App() {
 }
 
 export default App
+  const colorIdForPlayer = (player: StateSnapshot['players'][number]) =>
+    player.isEcho ? player.ownerId ?? player.id : player.id
