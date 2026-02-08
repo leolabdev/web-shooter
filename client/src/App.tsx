@@ -332,10 +332,6 @@ function App() {
               <p className="hud-value">{roomInfo.roomId}</p>
             </div>
             <div>
-              <p className="hud-label">You</p>
-              <p className="hud-value">{roomInfo.playerId}</p>
-            </div>
-            <div>
               <p className="hud-label">Ping</p>
               <p className="hud-value">{pingMs !== null ? `${pingMs}ms` : '...'}</p>
             </div>
