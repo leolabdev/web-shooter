@@ -20,6 +20,7 @@ import {
   type NovaFx,
   type StrikeBoomFx,
   type StrikeMarkFx,
+  type StrikePreview,
 } from './render/canvasRenderer'
 import { colorFromId } from './render/colors'
 import { updateFxRegistry, type FxState } from './render/fx'
@@ -172,6 +173,13 @@ function App() {
           strikeBoomsRef.current = strikeBoomsRef.current.filter(
             (boom) => boom.until > frame.timestamp,
           )
+          const strikePreview: StrikePreview | undefined = strikeTargetingRef.current
+            ? {
+                x: strikeAimRef.current.x,
+                y: strikeAimRef.current.y,
+                r: 120,
+              }
+            : undefined
           if (renderState) {
             renderSnapshot(
               ctx,
@@ -182,6 +190,7 @@ function App() {
               novasRef.current,
               strikeMarksRef.current,
               strikeBoomsRef.current,
+              strikePreview,
             )
           } else {
             renderSnapshot(
@@ -193,6 +202,7 @@ function App() {
               novasRef.current,
               strikeMarksRef.current,
               strikeBoomsRef.current,
+              strikePreview,
             )
           }
         }),

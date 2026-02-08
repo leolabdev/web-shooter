@@ -179,6 +179,12 @@ export type StrikeBoomFx = {
   until: number
 }
 
+export type StrikePreview = {
+  x: number
+  y: number
+  r: number
+}
+
 export const renderSnapshot = (
   ctx: CanvasRenderingContext2D,
   snapshot: StateSnapshot,
@@ -188,6 +194,7 @@ export const renderSnapshot = (
   novas: NovaFx[] = [],
   strikeMarks: StrikeMarkFx[] = [],
   strikeBooms: StrikeBoomFx[] = [],
+  strikePreview?: StrikePreview,
 ) => {
   ctx.clearRect(0, 0, ARENA.w, ARENA.h)
   ctx.fillStyle = COLORS.background
@@ -292,4 +299,27 @@ export const renderSnapshot = (
   })
 
   snapshot.players.forEach((player) => drawPlayer(ctx, player, fxMap.get(player.id), nowMs))
+
+  if (strikePreview) {
+    ctx.save()
+    ctx.fillStyle = 'rgba(255, 155, 107, 0.08)'
+    ctx.strokeStyle = 'rgba(255, 155, 107, 0.7)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(strikePreview.x, strikePreview.y, strikePreview.r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(strikePreview.x - 12, strikePreview.y)
+    ctx.lineTo(strikePreview.x + 12, strikePreview.y)
+    ctx.moveTo(strikePreview.x, strikePreview.y - 12)
+    ctx.lineTo(strikePreview.x, strikePreview.y + 12)
+    ctx.stroke()
+    ctx.fillStyle = 'rgba(255, 155, 107, 0.9)'
+    ctx.font = '12px "Space Grotesk", "Segoe UI", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText('CLICK', strikePreview.x, strikePreview.y - strikePreview.r - 6)
+    ctx.restore()
+  }
 }
