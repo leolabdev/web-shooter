@@ -3,9 +3,12 @@ import type {
     ClientToServerEvents,
     ServerToClientEvents,
     PlayerState,
+    BulletState,
+    GameEvent,
     StateSnapshot,
 } from "../../shared/protocol";
 import { ARENA } from "../../shared/protocol";
+import { stepBullets } from "./world";
 
 export type RoomPlayer = {
     id: string;
@@ -25,6 +28,9 @@ const TICK_MS = 50;
 const SPEED = 240;
 const PLAYER_RADIUS = 18;
 const PLAYER_HP = 3;
+const BULLET_SPEED = 520;
+const BULLET_TTL_MS = 1200;
+const FIRE_COOLDOWN_MS = 1000 / 6;
 const SPAWN_POINTS = [
     { x: 60, y: 60 },
     { x: ARENA.w - 60, y: 60 },
@@ -37,8 +43,11 @@ export class Room {
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
     private players = new Map<string, PlayerState>();
     private latestInputs = new Map<string, PlayerInput>();
+    private bullets = new Map<string, BulletState>();
+    private lastShotAtMs = new Map<string, number>();
     private tickTimer: NodeJS.Timeout | null = null;
     private lastTickMs = Date.now();
+    private bulletSeq = 0;
 
     constructor(
         id: string,
@@ -68,6 +77,12 @@ export class Room {
     removePlayer(playerId: string): void {
         this.players.delete(playerId);
         this.latestInputs.delete(playerId);
+        this.lastShotAtMs.delete(playerId);
+        for (const bullet of this.bullets.values()) {
+            if (bullet.ownerRootId === playerId) {
+                this.bullets.delete(bullet.id);
+            }
+        }
     }
 
     hasPlayer(playerId: string): boolean {
@@ -102,9 +117,11 @@ export class Room {
         const now = Date.now();
         const dtSeconds = Math.max(0.001, (now - this.lastTickMs) / 1000);
         this.lastTickMs = now;
+        const events: GameEvent[] = [];
+
         for (const [playerId, player] of this.players.entries()) {
             const input = this.latestInputs.get(playerId);
-            if (!input) continue;
+            if (!input || !player.alive) continue;
             const dx = (input.keys.right ? 1 : 0) - (input.keys.left ? 1 : 0);
             const dy = (input.keys.down ? 1 : 0) - (input.keys.up ? 1 : 0);
             if (dx !== 0 || dy !== 0) {
@@ -116,20 +133,35 @@ export class Room {
                 player.x = clamp(player.x, PLAYER_RADIUS, ARENA.w - PLAYER_RADIUS);
                 player.y = clamp(player.y, PLAYER_RADIUS, ARENA.h - PLAYER_RADIUS);
             }
+
+            if (input.shoot) {
+                this.tryShoot(player, input, now);
+            }
         }
-        this.broadcastState(now);
+
+        stepBullets({
+            bullets: this.bullets,
+            players: this.players,
+            events,
+            dtSeconds,
+            arena: ARENA,
+            onDeath: (playerId) => this.scheduleRespawn(playerId),
+        });
+
+        this.broadcastState(now, events);
     }
 
-    private broadcastState(timestamp: number): void {
+    private broadcastState(timestamp: number, events: GameEvent[]): void {
         const players = Array.from(this.players.values());
+        const bullets = Array.from(this.bullets.values());
         for (const playerId of this.players.keys()) {
             const snapshot: StateSnapshot = {
                 t: timestamp,
                 roomId: this.id,
                 you: { playerId },
                 players,
-                bullets: [],
-                events: [],
+                bullets,
+                events,
             };
             this.io.to(playerId).emit("game:state", snapshot);
         }
@@ -138,6 +170,48 @@ export class Room {
     private randomSpawn(): { x: number; y: number } {
         const index = Math.floor(Math.random() * SPAWN_POINTS.length);
         return SPAWN_POINTS[index];
+    }
+
+    private tryShoot(
+        player: PlayerState,
+        input: PlayerInput,
+        nowMs: number,
+    ): void {
+        const lastShot = this.lastShotAtMs.get(player.id) ?? 0;
+        if (nowMs - lastShot < FIRE_COOLDOWN_MS) return;
+
+        const dx = input.aim.x - player.x;
+        const dy = input.aim.y - player.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) return;
+
+        const nx = dx / length;
+        const ny = dy / length;
+        const spawnOffset = player.r + 6;
+        const bullet: BulletState = {
+            id: `${this.id}-b-${this.bulletSeq++}`,
+            ownerId: player.id,
+            ownerRootId: player.id,
+            x: player.x + nx * spawnOffset,
+            y: player.y + ny * spawnOffset,
+            vx: nx * BULLET_SPEED,
+            vy: ny * BULLET_SPEED,
+            ttlMs: BULLET_TTL_MS,
+        };
+        this.bullets.set(bullet.id, bullet);
+        this.lastShotAtMs.set(player.id, nowMs);
+    }
+
+    private scheduleRespawn(playerId: string): void {
+        setTimeout(() => {
+            const player = this.players.get(playerId);
+            if (!player) return;
+            const spawn = this.randomSpawn();
+            player.x = spawn.x;
+            player.y = spawn.y;
+            player.hp = PLAYER_HP;
+            player.alive = true;
+        }, 1500);
     }
 }
 

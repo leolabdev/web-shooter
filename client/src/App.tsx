@@ -186,6 +186,14 @@ function App() {
               <p className="hud-value">{pingMs !== null ? `${pingMs}ms` : '...'}</p>
             </div>
             <div>
+              <p className="hud-label">HP</p>
+              <p className="hud-value">{localPlayer ? localPlayer.hp : '...'}</p>
+            </div>
+            <div>
+              <p className="hud-label">Status</p>
+              <p className="hud-value">{localPlayer?.alive ? 'Alive' : 'Down'}</p>
+            </div>
+            <div>
               <p className="hud-label">Echo Cooldown</p>
               <p className="hud-value">
                 {localPlayer?.echoCdMs ? `${Math.ceil(localPlayer.echoCdMs)}ms` : 'Ready'}

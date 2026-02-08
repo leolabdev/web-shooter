@@ -5,6 +5,7 @@ const COLORS = {
   border: '#4b6ef5',
   player: '#7ef1ff',
   playerStroke: '#09101d',
+  bullet: '#ffd56b',
   text: '#e8f0ff',
 }
 
@@ -36,6 +37,13 @@ export const renderSnapshot = (ctx: CanvasRenderingContext2D, snapshot: StateSna
   ctx.strokeStyle = COLORS.border
   ctx.lineWidth = 3
   ctx.strokeRect(0, 0, ARENA.w, ARENA.h)
+
+  ctx.fillStyle = COLORS.bullet
+  snapshot.bullets.forEach((bullet) => {
+    ctx.beginPath()
+    ctx.arc(bullet.x, bullet.y, 3, 0, Math.PI * 2)
+    ctx.fill()
+  })
 
   snapshot.players.forEach((player) => drawPlayer(ctx, player))
 }
