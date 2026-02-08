@@ -27,7 +27,11 @@ const mapAimToArena = (event: MouseEvent, canvas: HTMLCanvasElement): Vec2 => {
 
 export const createInputPackets = (
   canvas: HTMLCanvasElement,
-  options?: { isChatActive?: () => boolean; resetKeys$?: Observable<void> },
+  options?: {
+    isChatActive?: () => boolean
+    resetKeys$?: Observable<void>
+    isShootEnabled?: () => boolean
+  },
 ) => {
   const reset$ = options?.resetKeys$?.pipe(map(() => ({ type: 'reset' as const })))
 
@@ -97,12 +101,13 @@ export const createInputPackets = (
         const dt = acc.lastTs === 0 ? 50 : sample.timestamp - acc.lastTs
         const useItem = sample.value.itemCount !== acc.lastItemCount
         const chatActive = options?.isChatActive?.() ?? false
+        const shootEnabled = options?.isShootEnabled?.() ?? true
         const packet: Parameters<ClientToServerEvents['player:input']>[0] = {
           seq: acc.seq + 1,
           dt,
           keys: chatActive ? initialKeys : sample.value.keys,
           aim: sample.value.aim,
-          shoot: chatActive ? false : sample.value.shoot,
+          shoot: chatActive || !shootEnabled ? false : sample.value.shoot,
           useItem: chatActive ? false : useItem,
         }
         return {

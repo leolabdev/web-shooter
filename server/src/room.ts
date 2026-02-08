@@ -41,6 +41,21 @@ type EchoMeta = {
     ownerId: string;
 };
 
+type Strike = {
+    id: string;
+    x: number;
+    y: number;
+    explodeAtMs: number;
+    r: number;
+    damage: number;
+    byId: string;
+};
+
+type PendingStrike = {
+    active: boolean;
+    expiresAtMs: number;
+};
+
 const TICK_MS = 50;
 const SPEED = 240;
 const PLAYER_RADIUS = 18;
@@ -60,6 +75,10 @@ const NOVA_BULLET_SPEED = 420;
 const NOVA_BULLET_TTL_MS = 900;
 const NOVA_SPAWN_OFFSET = 10;
 const NOVA_HIT_COOLDOWN_MS = 150;
+const STRIKE_MARK_MS = 1000;
+const STRIKE_RADIUS = 120;
+const STRIKE_DAMAGE = 2;
+const STRIKE_TARGET_WINDOW_MS = 5000;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
@@ -83,6 +102,7 @@ const ABILITIES: AbilityType[] = [
     "shield",
     "rift_sniper",
     "pulse_nova",
+    "orbital_strike",
 ];
 
 export class Room {
@@ -103,6 +123,9 @@ export class Room {
     private echoes = new Map<string, EchoMeta>();
     private pickups = new Map<string, PickupState>();
     private zones = new Map<string, ZoneState>();
+    private strikes: Strike[] = [];
+    private pendingStrikes = new Map<string, PendingStrike>();
+    private pendingEvents: GameEvent[] = [];
     private chatMessages: ChatMessage[] = [];
     private tickTimer: NodeJS.Timeout | null = null;
     private lastTickMs = Date.now();
@@ -111,6 +134,7 @@ export class Room {
     private pickupSeq = 0;
     private zoneSeq = 0;
     private novaSeq = 0;
+    private strikeSeq = 0;
 
     constructor(
         id: string,
@@ -161,6 +185,8 @@ export class Room {
         this.lastUseItemSeq.delete(playerId);
         this.dashUntilMs.delete(playerId);
         this.shieldUntilMs.delete(playerId);
+        this.pendingStrikes.delete(playerId);
+        this.strikes = this.strikes.filter((strike) => strike.byId !== playerId);
         if (this.match.hostId === playerId) {
             this.assignNewHost();
         }
@@ -233,7 +259,7 @@ export class Room {
         const now = Date.now();
         const dtSeconds = Math.max(0.001, (now - this.lastTickMs) / 1000);
         this.lastTickMs = now;
-        const events: GameEvent[] = [];
+        const events: GameEvent[] = this.pendingEvents.splice(0);
         const isPlaying = this.match.phase === "playing";
 
         for (const [playerId, player] of this.players.entries()) {
@@ -253,11 +279,13 @@ export class Room {
             }
         }
 
+        this.updatePendingStrikes(now);
         this.updateShields(now);
 
         this.collectPickups();
         this.updateZones(now);
         this.updateEchoes(now, dtSeconds, isPlaying);
+        this.updateStrikes(now, events);
         stepBullets({
             bullets: this.bullets,
             players: this.players,
@@ -428,8 +456,22 @@ export class Room {
             }
         } else if (player.heldItem === "pulse_nova") {
             this.firePulseNova(player, nowMs, events);
+        } else if (player.heldItem === "orbital_strike") {
+            this.beginStrikeTargeting(player, nowMs);
+            return;
         }
         player.heldItem = null;
+    }
+
+    private beginStrikeTargeting(player: PlayerState, nowMs: number): void {
+        if (player.isEcho) return;
+        const pending = this.pendingStrikes.get(player.id);
+        if (pending && pending.active && nowMs <= pending.expiresAtMs) return;
+        this.pendingStrikes.set(player.id, {
+            active: true,
+            expiresAtMs: nowMs + STRIKE_TARGET_WINDOW_MS,
+        });
+        this.io.to(player.id).emit("match:toast", { message: "Select target (LMB)" });
     }
 
     private activateShield(player: PlayerState, nowMs: number): void {
@@ -522,6 +564,14 @@ export class Room {
         }
     }
 
+    private updatePendingStrikes(nowMs: number): void {
+        for (const [playerId, pending] of this.pendingStrikes.entries()) {
+            if (!pending.active || nowMs > pending.expiresAtMs) {
+                this.pendingStrikes.delete(playerId);
+            }
+        }
+    }
+
     private updateShields(nowMs: number): void {
         for (const player of this.players.values()) {
             if (player.isEcho) {
@@ -532,6 +582,19 @@ export class Room {
                 player.shieldHp = 0;
             }
         }
+    }
+
+    private updateStrikes(nowMs: number, events: GameEvent[]): void {
+        if (this.match.phase !== "playing") return;
+        const pending: Strike[] = [];
+        for (const strike of this.strikes) {
+            if (nowMs >= strike.explodeAtMs) {
+                this.resolveStrike(strike, nowMs, events);
+            } else {
+                pending.push(strike);
+            }
+        }
+        this.strikes = pending;
     }
 
     private getMoveMultiplier(
@@ -774,6 +837,87 @@ export class Room {
         this.handleDeath(target.id);
     }
 
+    confirmStrike(playerId: string, x: number, y: number, nowMs: number): void {
+        if (this.match.phase !== "playing") return;
+        const player = this.players.get(playerId);
+        if (!player || player.isEcho || !player.alive) return;
+        const pending = this.pendingStrikes.get(playerId);
+        if (!pending || !pending.active || nowMs > pending.expiresAtMs) return;
+        if (player.heldItem !== "orbital_strike") return;
+
+        const target = {
+            x: clamp(x, 0, ARENA.w),
+            y: clamp(y, 0, ARENA.h),
+        };
+        const strike: Strike = {
+            id: `${this.id}-s-${this.strikeSeq++}`,
+            x: target.x,
+            y: target.y,
+            explodeAtMs: nowMs + STRIKE_MARK_MS,
+            r: STRIKE_RADIUS,
+            damage: STRIKE_DAMAGE,
+            byId: playerId,
+        };
+        this.strikes.push(strike);
+        this.pendingStrikes.delete(playerId);
+        player.heldItem = null;
+        this.pendingEvents.push({
+            type: "strike_mark",
+            id: strike.id,
+            x: strike.x,
+            y: strike.y,
+            etaMs: STRIKE_MARK_MS,
+        });
+    }
+
+    private resolveStrike(strike: Strike, nowMs: number, events: GameEvent[]): void {
+        for (const target of this.players.values()) {
+            if (!target.alive) continue;
+            if (
+                !this.pointInCircle(
+                    target.x,
+                    target.y,
+                    strike.x,
+                    strike.y,
+                    strike.r,
+                )
+            ) {
+                continue;
+            }
+            if (!target.isEcho && this.isShieldActive(target.id, nowMs)) {
+                this.handleShieldHit(target.id, strike.byId, events);
+                continue;
+            }
+            if (target.isEcho && target.ownerId === strike.byId) continue;
+            const nextHp = target.hp - strike.damage;
+            if (nextHp <= 0) {
+                this.killEntity(target, strike.byId, events);
+            } else {
+                target.hp = nextHp;
+                events.push({ type: "hit", targetId: target.id, byRootId: strike.byId });
+            }
+        }
+        events.push({
+            type: "strike_boom",
+            id: strike.id,
+            x: strike.x,
+            y: strike.y,
+            r: strike.r,
+        });
+    }
+
+    private pointInCircle(
+        x: number,
+        y: number,
+        cx: number,
+        cy: number,
+        r: number,
+    ): boolean {
+        const dx = x - cx;
+        const dy = y - cy;
+        return dx * dx + dy * dy <= r * r;
+    }
+
     private rayToArenaEdge(
         x: number,
         y: number,
@@ -849,6 +993,9 @@ export class Room {
     private resetForMatch(clearScores = false): void {
         this.bullets.clear();
         this.zones.clear();
+        this.strikes = [];
+        this.pendingStrikes.clear();
+        this.pendingEvents = [];
         for (const [echoId, meta] of this.echoes.entries()) {
             this.echoes.delete(echoId);
             this.players.delete(echoId);

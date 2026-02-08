@@ -238,6 +238,12 @@ button:disabled {
   gap: 12px;
 }
 
+.strike-hint {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
 .scoreboard-panel {
   display: flex;
   flex-direction: column;

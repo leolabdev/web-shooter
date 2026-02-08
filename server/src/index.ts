@@ -95,6 +95,12 @@ io.on("connection", (socket) => {
         room.restartMatch();
     });
 
+    socket.on("strike:confirm", ({ x, y }) => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        room.confirmStrike(socket.id, x, y, Date.now());
+    });
+
     socket.on("chat:send", ({ text }) => {
         const room = roomManager.getRoomByPlayer(socket.id);
         if (!room) return;

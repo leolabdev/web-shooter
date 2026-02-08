@@ -78,6 +78,8 @@ export const connectSocket = () => {
       socket.emit('player:input', payload),
     chatSend: (payload: Parameters<ClientToServerEvents['chat:send']>[0]) =>
       socket.emit('chat:send', payload),
+    strikeConfirm: (payload: Parameters<ClientToServerEvents['strike:confirm']>[0]) =>
+      socket.emit('strike:confirm', payload),
     configureMatch: (payload: Parameters<ClientToServerEvents['match:configure']>[0]) =>
       socket.emit('match:configure', payload),
     startMatch: () => socket.emit('match:start'),

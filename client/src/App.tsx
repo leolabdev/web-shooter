@@ -14,7 +14,13 @@ import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
 import { createSnapshotInterpolator } from './rx/interpolation'
-import { renderSnapshot, type BeamFx, type NovaFx } from './render/canvasRenderer'
+import {
+  renderSnapshot,
+  type BeamFx,
+  type NovaFx,
+  type StrikeBoomFx,
+  type StrikeMarkFx,
+} from './render/canvasRenderer'
 import { colorFromId } from './render/colors'
 import { updateFxRegistry, type FxState } from './render/fx'
 
@@ -31,6 +37,7 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatOpen, setChatOpen] = useState(false)
   const [chatText, setChatText] = useState('')
+  const [strikeTargeting, setStrikeTargeting] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(300)
   const [maxPlayers, setMaxPlayers] = useState(6)
@@ -45,6 +52,11 @@ function App() {
   const resetKeysRef = useRef(new Subject<void>())
   const beamsRef = useRef<BeamFx[]>([])
   const novasRef = useRef<NovaFx[]>([])
+  const strikeMarksRef = useRef<StrikeMarkFx[]>([])
+  const strikeBoomsRef = useRef<StrikeBoomFx[]>([])
+  const strikeTargetingRef = useRef(false)
+  const strikeAimRef = useRef({ x: ARENA.w / 2, y: ARENA.h / 2 })
+  const strikeTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     const conn = connectSocket()
@@ -116,6 +128,24 @@ function App() {
             if (player) {
               novasRef.current.push({ x: player.x, y: player.y, until: now + 120 })
             }
+          } else if (event.type === 'strike_mark') {
+            strikeMarksRef.current.push({
+              id: event.id,
+              x: event.x,
+              y: event.y,
+              startedAt: now,
+              explodeAt: now + event.etaMs,
+            })
+          } else if (event.type === 'strike_boom') {
+            strikeBoomsRef.current.push({
+              x: event.x,
+              y: event.y,
+              r: event.r,
+              until: now + 200,
+            })
+            strikeMarksRef.current = strikeMarksRef.current.filter(
+              (mark) => mark.id !== event.id,
+            )
           }
         })
         interpolatorRef.current.pushSnapshot(nextSnapshot, performance.now())
@@ -125,6 +155,7 @@ function App() {
     subs.add(
       createInputPackets(canvas, {
         isChatActive: () => chatOpenRef.current,
+        isShootEnabled: () => !strikeTargetingRef.current,
         resetKeys$: resetKeysRef.current,
       }).subscribe((packet) => connection.send.input(packet)),
     )
@@ -135,6 +166,12 @@ function App() {
           const renderState = interpolatorRef.current.getInterpolatedState(frame.timestamp)
           beamsRef.current = beamsRef.current.filter((beam) => beam.until > frame.timestamp)
           novasRef.current = novasRef.current.filter((nova) => nova.until > frame.timestamp)
+          strikeMarksRef.current = strikeMarksRef.current.filter(
+            (mark) => mark.explodeAt > frame.timestamp,
+          )
+          strikeBoomsRef.current = strikeBoomsRef.current.filter(
+            (boom) => boom.until > frame.timestamp,
+          )
           if (renderState) {
             renderSnapshot(
               ctx,
@@ -143,6 +180,8 @@ function App() {
               frame.timestamp,
               beamsRef.current,
               novasRef.current,
+              strikeMarksRef.current,
+              strikeBoomsRef.current,
             )
           } else {
             renderSnapshot(
@@ -152,6 +191,8 @@ function App() {
               frame.timestamp,
               beamsRef.current,
               novasRef.current,
+              strikeMarksRef.current,
+              strikeBoomsRef.current,
             )
           }
         }),
@@ -201,6 +242,17 @@ function App() {
   }, [chatOpen])
 
   useEffect(() => {
+    if (chatOpen) {
+      strikeTargetingRef.current = false
+      setStrikeTargeting(false)
+      if (strikeTimeoutRef.current) {
+        window.clearTimeout(strikeTimeoutRef.current)
+        strikeTimeoutRef.current = null
+      }
+    }
+  }, [chatOpen])
+
+  useEffect(() => {
     const container = chatScrollRef.current
     if (!container) return
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40
@@ -229,11 +281,28 @@ function App() {
       } else if (event.code === 'Escape' && chatOpenRef.current) {
         event.preventDefault()
         closeChat()
+      } else if (
+        event.code === 'KeyQ' &&
+        heldItem === 'orbital_strike' &&
+        !chatOpenRef.current &&
+        match?.phase === 'playing'
+      ) {
+        event.preventDefault()
+        strikeTargetingRef.current = true
+        setStrikeTargeting(true)
+        if (strikeTimeoutRef.current) {
+          window.clearTimeout(strikeTimeoutRef.current)
+        }
+        strikeTimeoutRef.current = window.setTimeout(() => {
+          strikeTargetingRef.current = false
+          setStrikeTargeting(false)
+          strikeTimeoutRef.current = null
+        }, 5000)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [roomInfo])
+  }, [roomInfo, heldItem, match?.phase])
 
   const submitChat = () => {
     const text = chatText.trim()
@@ -248,6 +317,39 @@ function App() {
     if (!connection) return
     connection.send.configureMatch({ durationSec: value })
   }
+
+  useEffect(() => {
+    if (!roomInfo) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const onMove = (event: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect()
+      const x = ((event.clientX - rect.left) / rect.width) * ARENA.w
+      const y = ((event.clientY - rect.top) / rect.height) * ARENA.h
+      strikeAimRef.current = {
+        x: Math.min(ARENA.w, Math.max(0, x)),
+        y: Math.min(ARENA.h, Math.max(0, y)),
+      }
+    }
+    const onClick = (event: MouseEvent) => {
+      if (event.button !== 0) return
+      if (!strikeTargetingRef.current) return
+      event.preventDefault()
+      connection?.send.strikeConfirm(strikeAimRef.current)
+      strikeTargetingRef.current = false
+      setStrikeTargeting(false)
+      if (strikeTimeoutRef.current) {
+        window.clearTimeout(strikeTimeoutRef.current)
+        strikeTimeoutRef.current = null
+      }
+    }
+    canvas.addEventListener('mousemove', onMove)
+    canvas.addEventListener('mousedown', onClick)
+    return () => {
+      canvas.removeEventListener('mousemove', onMove)
+      canvas.removeEventListener('mousedown', onClick)
+    }
+  }, [roomInfo, connection])
 
   return (
     <div className="app">
@@ -411,6 +513,9 @@ function App() {
             <div className="canvas-shell">
               <canvas ref={canvasRef} width={ARENA.w} height={ARENA.h} tabIndex={0} />
             </div>
+            {strikeTargeting ? (
+              <div className="strike-hint">Click to designate target</div>
+            ) : null}
           </div>
 
           <aside className="scoreboard-panel">
@@ -453,7 +558,7 @@ function App() {
                     </div>
                   </>
                 ) : (
-                  <p className="subtle">Waiting for host…</p>
+                  <p className="subtle">Waiting for host...</p>
                 )}
               </div>
             ) : null}

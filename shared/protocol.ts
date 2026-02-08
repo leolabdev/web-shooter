@@ -42,7 +42,9 @@ export type GameEvent =
     | { type: "beam_fire"; byId: string; from: Vec2; to: Vec2 }
     | { type: "shield_break"; id: string }
     | { type: "shield_hit"; id: string; hpLeft: number }
-    | { type: "nova_fire"; byId: string };
+    | { type: "nova_fire"; byId: string }
+    | { type: "strike_mark"; id: string; x: number; y: number; etaMs: number }
+    | { type: "strike_boom"; id: string; x: number; y: number; r: number };
 
 export type MatchPhase = "lobby" | "playing" | "ended";
 
@@ -84,6 +86,8 @@ export type ClientToServerEvents = {
         useItem: boolean; // one-shot
     }) => void;
 
+    "strike:confirm": (payload: { x: number; y: number }) => void;
+
     "match:configure": (payload: { durationSec: number }) => void;
     "match:start": () => void;
     "match:restart": () => void;
@@ -120,7 +124,8 @@ export type AbilityType =
     | "phase_dash"
     | "shield"
     | "rift_sniper"
-    | "pulse_nova";
+    | "pulse_nova"
+    | "orbital_strike";
 
 export type PickupState = {
     id: string;

@@ -15,6 +15,7 @@ const COLORS = {
   pickupNova: '#ffd66b',
   pickupShield: '#7cffb3',
   pickupRift: '#ff7ad9',
+  pickupStrike: '#ff9b6b',
   shieldRing: 'rgba(124, 255, 179, 0.7)',
   beam: 'rgba(255, 225, 140, 0.85)',
 }
@@ -25,6 +26,7 @@ const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'shield') return 'S'
   if (type === 'rift_sniper') return 'R'
   if (type === 'pulse_nova') return 'N'
+  if (type === 'orbital_strike') return 'O'
   return 'D'
 }
 
@@ -34,6 +36,7 @@ const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'shield') return COLORS.pickupShield
   if (type === 'rift_sniper') return COLORS.pickupRift
   if (type === 'pulse_nova') return COLORS.pickupNova
+  if (type === 'orbital_strike') return COLORS.pickupStrike
   return COLORS.pickupDash
 }
 
@@ -161,6 +164,21 @@ export type NovaFx = {
   until: number
 }
 
+export type StrikeMarkFx = {
+  id: string
+  x: number
+  y: number
+  startedAt: number
+  explodeAt: number
+}
+
+export type StrikeBoomFx = {
+  x: number
+  y: number
+  r: number
+  until: number
+}
+
 export const renderSnapshot = (
   ctx: CanvasRenderingContext2D,
   snapshot: StateSnapshot,
@@ -168,6 +186,8 @@ export const renderSnapshot = (
   nowMs: number,
   beams: BeamFx[] = [],
   novas: NovaFx[] = [],
+  strikeMarks: StrikeMarkFx[] = [],
+  strikeBooms: StrikeBoomFx[] = [],
 ) => {
   ctx.clearRect(0, 0, ARENA.w, ARENA.h)
   ctx.fillStyle = COLORS.background
@@ -238,6 +258,36 @@ export const renderSnapshot = (
     ctx.beginPath()
     ctx.arc(nova.x, nova.y, 20 + (1 - t) * 30, 0, Math.PI * 2)
     ctx.stroke()
+    ctx.restore()
+  })
+
+  strikeMarks.forEach((mark) => {
+    if (nowMs >= mark.explodeAt) return
+    const total = mark.explodeAt - mark.startedAt
+    const remaining = Math.max(0, mark.explodeAt - nowMs)
+    const t = total > 0 ? remaining / total : 0
+    ctx.save()
+    ctx.strokeStyle = 'rgba(255, 155, 107, 0.8)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(mark.x, mark.y, 18, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(255, 155, 107, 0.5)'
+    ctx.beginPath()
+    ctx.arc(mark.x, mark.y, 28, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t)
+    ctx.stroke()
+    ctx.restore()
+  })
+
+  strikeBooms.forEach((boom) => {
+    if (boom.until <= nowMs) return
+    const t = Math.max(0, Math.min(1, (boom.until - nowMs) / 200))
+    ctx.save()
+    ctx.globalAlpha = t
+    ctx.fillStyle = 'rgba(255, 155, 107, 0.25)'
+    ctx.beginPath()
+    ctx.arc(boom.x, boom.y, boom.r, 0, Math.PI * 2)
+    ctx.fill()
     ctx.restore()
   })
 
