@@ -90,6 +90,11 @@ const PORTAL_PENDING_MS = 5000;
 const PORTAL_ENTITY_COOLDOWN_MS = 250;
 const PORTAL_BULLET_COOLDOWN_MS = 60;
 const PORTAL_BULLET_JUMPS = 2;
+const BOUNCER_SPEED = 220;
+const BOUNCER_TTL_MS = 12000;
+const BOUNCER_RADIUS = 36;
+const BOUNCER_DAMAGE = 1;
+const BOUNCER_BOUNCES = 6;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
@@ -115,6 +120,7 @@ const ABILITIES: AbilityType[] = [
     "pulse_nova",
     "orbital_strike",
     "linked_portals",
+    "annihilation_bouncer",
 ];
 
 export class Room {
@@ -728,8 +734,39 @@ export class Room {
         } else if (player.heldItem === "linked_portals") {
             this.beginPortalPlacement(player, nowMs);
             return;
+        } else if (player.heldItem === "annihilation_bouncer") {
+            const fired = this.fireAnnihilationBouncer(player, input);
+            if (!fired) {
+                return;
+            }
         }
         player.heldItem = null;
+    }
+
+    private fireAnnihilationBouncer(player: PlayerState, input: PlayerInput): boolean {
+        if (player.isEcho) return false;
+        const dx = input.aim.x - player.x;
+        const dy = input.aim.y - player.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) return false;
+        const nx = dx / length;
+        const ny = dy / length;
+        const spawnOffset = player.r + BOUNCER_RADIUS + 4;
+        const bullet: BulletState = {
+            id: `${this.id}-b-${this.bulletSeq++}`,
+            ownerId: player.id,
+            ownerRootId: player.id,
+            x: player.x + nx * spawnOffset,
+            y: player.y + ny * spawnOffset,
+            vx: nx * BOUNCER_SPEED,
+            vy: ny * BOUNCER_SPEED,
+            ttlMs: BOUNCER_TTL_MS,
+            bouncesLeft: BOUNCER_BOUNCES,
+            damage: BOUNCER_DAMAGE,
+            radius: BOUNCER_RADIUS,
+        };
+        this.bullets.set(bullet.id, bullet);
+        return true;
     }
 
     private beginStrikeTargeting(player: PlayerState, nowMs: number): void {

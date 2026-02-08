@@ -17,6 +17,7 @@ const COLORS = {
   pickupRift: '#ff7ad9',
   pickupStrike: '#ff9b6b',
   pickupPortals: '#7aa5ff',
+  pickupBouncer: '#ffb2f0',
   shieldRing: 'rgba(124, 255, 179, 0.7)',
   beam: 'rgba(255, 225, 140, 0.85)',
   portal: 'rgba(122, 165, 255, 0.85)',
@@ -30,6 +31,7 @@ const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'pulse_nova') return 'N'
   if (type === 'orbital_strike') return 'O'
   if (type === 'linked_portals') return 'P'
+  if (type === 'annihilation_bouncer') return 'B'
   return 'D'
 }
 
@@ -41,6 +43,7 @@ const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'pulse_nova') return COLORS.pickupNova
   if (type === 'orbital_strike') return COLORS.pickupStrike
   if (type === 'linked_portals') return COLORS.pickupPortals
+  if (type === 'annihilation_bouncer') return COLORS.pickupBouncer
   return COLORS.pickupDash
 }
 
@@ -271,8 +274,9 @@ export const renderSnapshot = (
 
   ctx.fillStyle = COLORS.bullet
   snapshot.bullets.forEach((bullet) => {
+    const radius = bullet.radius ?? 3
     ctx.beginPath()
-    ctx.arc(bullet.x, bullet.y, 3, 0, Math.PI * 2)
+    ctx.arc(bullet.x, bullet.y, radius, 0, Math.PI * 2)
     ctx.fill()
   })
 
