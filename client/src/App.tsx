@@ -96,6 +96,9 @@ function App() {
   const canJoin = canCreate && roomId.trim().length > 0
 
   const localPlayer = snapshot?.players.find((player) => player.id === roomInfo?.playerId)
+  const realPlayers = snapshot?.players.filter((player) => !player.isEcho) ?? []
+  const hasActiveEcho = (playerId: string) =>
+    snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
 
   return (
     <div className="app">
@@ -215,18 +218,20 @@ function App() {
           <aside className="scoreboard">
             <div className="scoreboard-header">
               <h2>Scoreboard</h2>
-              <span className="subtle">{snapshot ? snapshot.players.length : 0} pilots</span>
+              <span className="subtle">{realPlayers.length} pilots</span>
             </div>
             <div className="score-list">
-              {snapshot?.players.map((player) => (
+              {realPlayers.map((player) => (
                 <div key={player.id} className="score-row">
                   <div className="score-name">
                     <span className={player.id === roomInfo.playerId ? 'you-tag' : undefined}>
                       {player.name}
+                      {hasActiveEcho(player.id) ? ' · Echo' : ''}
                     </span>
                   </div>
                   <div className="score-kd">
                     {player.kills}/{player.deaths}
+                    <span className="score-hp">HP {player.hp}</span>
                   </div>
                 </div>
               ))}

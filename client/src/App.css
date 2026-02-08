@@ -239,6 +239,15 @@ button:disabled {
 
 .score-kd {
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.score-hp {
+  color: var(--text);
+  font-size: 0.8rem;
 }
 
 .you-tag {
