@@ -54,6 +54,7 @@ const PHASE_DASH_MS = 250;
 const TIME_BUBBLE_MOVE_MULT = 0.55;
 const TIME_BUBBLE_BULLET_MULT = 0.6;
 const DASH_SPEED_MULT = 2.2;
+const SHIELD_DURATION_MS = 5000;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
@@ -61,6 +62,8 @@ const PICKUP_COUNT = 6;
 const PICKUP_RADIUS = 12;
 const PICKUP_PADDING = 40;
 const PICKUP_RESPAWN_MS = 10000;
+const RIFT_SNIPER_RESPAWN_MS = 45000;
+const RIFT_SNIPER_MAX = 1;
 const SPAWN_POINTS = [
     { x: 60, y: 60 },
     { x: ARENA.w - 60, y: 60 },
@@ -68,7 +71,13 @@ const SPAWN_POINTS = [
     { x: ARENA.w - 60, y: ARENA.h - 60 },
 ] as const;
 
-const ABILITIES: AbilityType[] = ["echo", "time_bubble", "phase_dash"];
+const ABILITIES: AbilityType[] = [
+    "echo",
+    "time_bubble",
+    "phase_dash",
+    "shield",
+    "rift_sniper",
+];
 
 export class Room {
     readonly id: string;
@@ -83,6 +92,7 @@ export class Room {
     private lastShotAtMs = new Map<string, number>();
     private lastUseItemSeq = new Map<string, number>();
     private dashUntilMs = new Map<string, number>();
+    private shieldUntilMs = new Map<string, number>();
     private echoes = new Map<string, EchoMeta>();
     private pickups = new Map<string, PickupState>();
     private zones = new Map<string, ZoneState>();
@@ -128,6 +138,7 @@ export class Room {
             deaths: 0,
             isEcho: false,
             heldItem: null,
+            shieldHp: 0,
         });
         if (!this.match.hostId) {
             this.match.hostId = player.id;
@@ -141,6 +152,7 @@ export class Room {
         this.lastShotAtMs.delete(playerId);
         this.lastUseItemSeq.delete(playerId);
         this.dashUntilMs.delete(playerId);
+        this.shieldUntilMs.delete(playerId);
         if (this.match.hostId === playerId) {
             this.assignNewHost();
         }
@@ -229,9 +241,11 @@ export class Room {
             }
 
             if (isPlaying && input.useItem && this.canUseItem(playerId, input.seq)) {
-                this.activateAbility(player, now, events);
+                this.activateAbility(player, now, input, events);
             }
         }
+
+        this.updateShields(now);
 
         this.collectPickups();
         this.updateZones(now);
@@ -245,6 +259,8 @@ export class Room {
             onDeath: (playerId) => this.handleDeath(playerId),
             bulletSpeedMultiplier: (x, y) => this.getBulletMultiplierAt(x, y),
             isInvulnerable: (playerId) => this.isDashing(playerId, now),
+            shieldHit: (playerId, byRootId) =>
+                this.handleShieldHit(playerId, byRootId, events),
             allowDamage: isPlaying,
         });
 
@@ -381,6 +397,7 @@ export class Room {
     private activateAbility(
         player: PlayerState,
         nowMs: number,
+        input: PlayerInput,
         events: GameEvent[],
     ): void {
         if (!player.heldItem) return;
@@ -391,8 +408,61 @@ export class Room {
             this.spawnTimeBubble(player, nowMs);
         } else if (player.heldItem === "phase_dash") {
             this.dashUntilMs.set(player.id, nowMs + PHASE_DASH_MS);
+        } else if (player.heldItem === "shield") {
+            this.activateShield(player, nowMs);
+        } else if (player.heldItem === "rift_sniper") {
+            const fired = this.fireRiftSniper(player, input, nowMs, events);
+            if (!fired) {
+                return;
+            }
         }
         player.heldItem = null;
+    }
+
+    private activateShield(player: PlayerState, nowMs: number): void {
+        if (player.isEcho) return;
+        player.shieldHp = 2;
+        this.shieldUntilMs.set(player.id, nowMs + SHIELD_DURATION_MS);
+    }
+
+    private fireRiftSniper(
+        player: PlayerState,
+        input: PlayerInput,
+        nowMs: number,
+        events: GameEvent[],
+    ): boolean {
+        if (player.isEcho) return false;
+        const dx = input.aim.x - player.x;
+        const dy = input.aim.y - player.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) return false;
+        const nx = dx / length;
+        const ny = dy / length;
+        const end = this.rayToArenaEdge(player.x, player.y, nx, ny);
+        events.push({ type: "beam_fire", byId: player.id, from: { x: player.x, y: player.y }, to: end });
+
+        for (const target of this.players.values()) {
+            if (!target.alive) continue;
+            if (target.id === player.id) continue;
+            if (target.isEcho && target.ownerId === player.id) continue;
+            if (!this.segmentIntersectsCircle(
+                player.x,
+                player.y,
+                end.x,
+                end.y,
+                target.x,
+                target.y,
+                target.r,
+            )) {
+                continue;
+            }
+            if (!target.isEcho && this.isShieldActive(target.id, nowMs)) {
+                this.breakShield(target.id, events);
+                continue;
+            }
+            this.killEntity(target, player.id, events);
+        }
+        return true;
     }
 
     private spawnTimeBubble(player: PlayerState, nowMs: number): void {
@@ -411,6 +481,18 @@ export class Room {
         for (const [zoneId, zone] of this.zones.entries()) {
             if (zone.expiresAtMs <= nowMs) {
                 this.zones.delete(zoneId);
+            }
+        }
+    }
+
+    private updateShields(nowMs: number): void {
+        for (const player of this.players.values()) {
+            if (player.isEcho) {
+                player.shieldHp = undefined;
+                continue;
+            }
+            if (!this.isShieldActive(player.id, nowMs)) {
+                player.shieldHp = 0;
             }
         }
     }
@@ -464,21 +546,24 @@ export class Room {
                 const dy = player.y - pickup.y;
                 const hitRadius = player.r + pickup.r;
                 if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                    if (pickup.type === "shield" || pickup.type === "rift_sniper") {
+                        if (player.isEcho) continue;
+                    }
                     player.heldItem = pickup.type;
                     this.pickups.delete(pickup.id);
-                    this.schedulePickupRespawn();
+                    this.schedulePickupRespawn(pickup.type);
                     break;
                 }
             }
         }
     }
 
-    private schedulePickupRespawn(): void {
+    private schedulePickupRespawn(type: AbilityType): void {
         setTimeout(() => {
             if (this.pickups.size < PICKUP_COUNT) {
                 this.spawnPickup();
             }
-        }, PICKUP_RESPAWN_MS);
+        }, type === "rift_sniper" ? RIFT_SNIPER_RESPAWN_MS : PICKUP_RESPAWN_MS);
     }
 
     private spawnInitialPickups(): void {
@@ -488,7 +573,10 @@ export class Room {
     }
 
     private spawnPickup(): void {
-        const type = ABILITIES[Math.floor(Math.random() * ABILITIES.length)];
+        let type = ABILITIES[Math.floor(Math.random() * ABILITIES.length)];
+        if (type === "rift_sniper" && this.countPickups("rift_sniper") >= RIFT_SNIPER_MAX) {
+            type = "shield";
+        }
         const { x, y } = this.randomPickupPosition();
         const pickup: PickupState = {
             id: `${this.id}-p-${this.pickupSeq++}`,
@@ -498,6 +586,14 @@ export class Room {
             r: PICKUP_RADIUS,
         };
         this.pickups.set(pickup.id, pickup);
+    }
+
+    private countPickups(type: AbilityType): number {
+        let count = 0;
+        for (const pickup of this.pickups.values()) {
+            if (pickup.type === type) count += 1;
+        }
+        return count;
     }
 
     private randomPickupPosition(): { x: number; y: number } {
@@ -550,6 +646,7 @@ export class Room {
             isEcho: true,
             ownerId: player.id,
             heldItem: null,
+            shieldHp: 0,
         });
         this.echoes.set(echoId, {
             ownerId: player.id,
@@ -568,9 +665,92 @@ export class Room {
             this.lastShotAtMs.delete(playerId);
             return;
         }
+        player.shieldHp = 0;
+        this.shieldUntilMs.delete(playerId);
         if (this.match.phase === "playing") {
             this.scheduleRespawn(playerId);
         }
+    }
+
+    private isShieldActive(playerId: string, nowMs: number): boolean {
+        const until = this.shieldUntilMs.get(playerId) ?? 0;
+        const player = this.players.get(playerId);
+        return !!player && !player.isEcho && (player.shieldHp ?? 0) > 0 && nowMs < until;
+    }
+
+    private breakShield(playerId: string, events: GameEvent[]): void {
+        const player = this.players.get(playerId);
+        if (!player || player.isEcho) return;
+        player.shieldHp = 0;
+        this.shieldUntilMs.delete(playerId);
+        events.push({ type: "shield_break", id: playerId });
+    }
+
+    private handleShieldHit(playerId: string, byRootId: string, events: GameEvent[]): boolean {
+        const now = Date.now();
+        if (!this.isShieldActive(playerId, now)) return false;
+        const player = this.players.get(playerId);
+        if (!player || player.isEcho) return false;
+        const nextHp = Math.max(0, (player.shieldHp ?? 0) - 1);
+        player.shieldHp = nextHp;
+        events.push({ type: "shield_hit", id: playerId, hpLeft: nextHp });
+        if (nextHp === 0) {
+            this.breakShield(playerId, events);
+        }
+        return true;
+    }
+
+    private killEntity(target: PlayerState, byRootId: string, events: GameEvent[]): void {
+        if (!target.alive) return;
+        target.alive = false;
+        target.deaths += 1;
+        const killer = this.players.get(byRootId);
+        if (killer) {
+            killer.kills += 1;
+        }
+        events.push({ type: "death", id: target.id, byRootId });
+        this.handleDeath(target.id);
+    }
+
+    private rayToArenaEdge(
+        x: number,
+        y: number,
+        nx: number,
+        ny: number,
+    ): { x: number; y: number } {
+        const tVals: number[] = [];
+        if (nx !== 0) {
+            tVals.push((0 - x) / nx);
+            tVals.push((ARENA.w - x) / nx);
+        }
+        if (ny !== 0) {
+            tVals.push((0 - y) / ny);
+            tVals.push((ARENA.h - y) / ny);
+        }
+        const positives = tVals.filter((value) => value > 0);
+        const t = positives.length > 0 ? Math.min(...positives) : 0;
+        return { x: x + nx * t, y: y + ny * t };
+    }
+
+    private segmentIntersectsCircle(
+        ax: number,
+        ay: number,
+        bx: number,
+        by: number,
+        cx: number,
+        cy: number,
+        r: number,
+    ): boolean {
+        const abx = bx - ax;
+        const aby = by - ay;
+        const t =
+            ((cx - ax) * abx + (cy - ay) * aby) / (abx * abx + aby * aby || 1);
+        const clamped = Math.max(0, Math.min(1, t));
+        const px = ax + abx * clamped;
+        const py = ay + aby * clamped;
+        const dx = cx - px;
+        const dy = cy - py;
+        return dx * dx + dy * dy <= r * r;
     }
 
     private assignNewHost(): void {
@@ -620,6 +800,8 @@ export class Room {
             player.hp = PLAYER_HP;
             player.alive = true;
             player.heldItem = null;
+            player.shieldHp = 0;
+            this.shieldUntilMs.delete(player.id);
             if (clearScores) {
                 player.kills = 0;
                 player.deaths = 0;

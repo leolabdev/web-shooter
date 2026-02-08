@@ -14,7 +14,7 @@ import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
 import { createSnapshotInterpolator } from './rx/interpolation'
-import { renderSnapshot } from './render/canvasRenderer'
+import { renderSnapshot, type BeamFx } from './render/canvasRenderer'
 import { colorFromId } from './render/colors'
 import { updateFxRegistry, type FxState } from './render/fx'
 
@@ -43,6 +43,7 @@ function App() {
   const chatOpenRef = useRef(false)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const resetKeysRef = useRef(new Subject<void>())
+  const beamsRef = useRef<BeamFx[]>([])
 
   useEffect(() => {
     const conn = connectSocket()
@@ -101,6 +102,16 @@ function App() {
     subs.add(
       state$.subscribe((nextSnapshot) => {
         updateFxRegistry(nextSnapshot, fxRef.current, performance.now())
+        const now = performance.now()
+        nextSnapshot.events.forEach((event) => {
+          if (event.type === 'beam_fire') {
+            beamsRef.current.push({
+              from: event.from,
+              to: event.to,
+              until: now + 120,
+            })
+          }
+        })
         interpolatorRef.current.pushSnapshot(nextSnapshot, performance.now())
         setSnapshot(nextSnapshot)
       }),
@@ -116,10 +127,11 @@ function App() {
         .pipe(withLatestFrom(state$))
         .subscribe(([frame, latest]) => {
           const renderState = interpolatorRef.current.getInterpolatedState(frame.timestamp)
+          beamsRef.current = beamsRef.current.filter((beam) => beam.until > frame.timestamp)
           if (renderState) {
-            renderSnapshot(ctx, renderState, fxRef.current, frame.timestamp)
+            renderSnapshot(ctx, renderState, fxRef.current, frame.timestamp, beamsRef.current)
           } else {
-            renderSnapshot(ctx, latest, fxRef.current, frame.timestamp)
+            renderSnapshot(ctx, latest, fxRef.current, frame.timestamp, beamsRef.current)
           }
         }),
     )
@@ -135,6 +147,7 @@ function App() {
   const hasActiveEcho = (playerId: string) =>
     snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
   const heldItem = localPlayer?.heldItem ?? null
+  const shieldHp = localPlayer?.shieldHp ?? 0
   const match: MatchState | null = snapshot?.match ?? null
   const isHost = match?.hostId === roomInfo?.playerId
   const hostName =
@@ -346,6 +359,10 @@ function App() {
             <div>
               <p className="hud-label">Held Item</p>
               <p className="hud-value">{heldItem ?? 'None'}</p>
+            </div>
+            <div>
+              <p className="hud-label">Shield</p>
+              <p className="hud-value">{shieldHp > 0 ? `${shieldHp} HP` : 'None'}</p>
             </div>
             <div>
               <p className="hud-label">Ability</p>

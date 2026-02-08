@@ -13,6 +13,7 @@ type StepParams = {
     bulletSpeedMultiplier?: (x: number, y: number) => number;
     isInvulnerable?: (playerId: string) => boolean;
     allowDamage?: boolean;
+    shieldHit?: (playerId: string, byRootId: string) => boolean;
 };
 
 export const stepBullets = ({
@@ -25,6 +26,7 @@ export const stepBullets = ({
     bulletSpeedMultiplier,
     isInvulnerable,
     allowDamage = true,
+    shieldHit,
 }: StepParams): void => {
     const removeIds = new Set<string>();
 
@@ -56,6 +58,10 @@ export const stepBullets = ({
             if (!player.alive) continue;
             if (player.id === bullet.ownerRootId) continue;
             if (isInvulnerable?.(player.id)) continue;
+            if (shieldHit?.(player.id, bullet.ownerRootId)) {
+                removeIds.add(bullet.id);
+                break;
+            }
             const dx = bullet.x - player.x;
             const dy = bullet.y - player.y;
             const hitRadius = player.r + BULLET_RADIUS;

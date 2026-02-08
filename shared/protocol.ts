@@ -19,6 +19,7 @@ export type PlayerState = {
     ownerId?: string;
 
     heldItem?: AbilityType | null;
+    shieldHp?: number;
 };
 
 
@@ -36,7 +37,10 @@ export type BulletState = {
 export type GameEvent =
     | { type: "hit"; targetId: string; byRootId: string }
     | { type: "death"; id: string; byRootId?: string }
-    | { type: "spawn_echo"; ownerId: string; echoId: string };
+    | { type: "spawn_echo"; ownerId: string; echoId: string }
+    | { type: "beam_fire"; byId: string; from: Vec2; to: Vec2 }
+    | { type: "shield_break"; id: string }
+    | { type: "shield_hit"; id: string; hpLeft: number };
 
 export type MatchPhase = "lobby" | "playing" | "ended";
 
@@ -108,7 +112,7 @@ export type ServerToClientEvents = {
 };
 
 
-export type AbilityType = "echo" | "time_bubble" | "phase_dash";
+export type AbilityType = "echo" | "time_bubble" | "phase_dash" | "shield" | "rift_sniper";
 
 export type PickupState = {
     id: string;

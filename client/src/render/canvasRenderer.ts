@@ -12,17 +12,25 @@ const COLORS = {
   pickupEcho: '#7ef1ff',
   pickupTime: '#7cffb3',
   pickupDash: '#ffb86b',
+  pickupShield: '#7cffb3',
+  pickupRift: '#ff7ad9',
+  shieldRing: 'rgba(124, 255, 179, 0.7)',
+  beam: 'rgba(255, 225, 140, 0.85)',
 }
 
 const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'echo') return 'E'
   if (type === 'time_bubble') return 'T'
+  if (type === 'shield') return 'S'
+  if (type === 'rift_sniper') return 'R'
   return 'D'
 }
 
 const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'echo') return COLORS.pickupEcho
   if (type === 'time_bubble') return COLORS.pickupTime
+  if (type === 'shield') return COLORS.pickupShield
+  if (type === 'rift_sniper') return COLORS.pickupRift
   return COLORS.pickupDash
 }
 
@@ -113,6 +121,15 @@ const drawPlayer = (
     ctx.stroke()
   }
 
+  if ((player.shieldHp ?? 0) > 0) {
+    ctx.globalAlpha = Math.min(1, alpha + 0.2)
+    ctx.strokeStyle = COLORS.shieldRing
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(player.x, player.y, radius + 6, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
   ctx.restore()
 
   drawRespawnPulse(ctx, player, baseColor, nowMs, respawnUntil)
@@ -129,11 +146,18 @@ const drawPlayer = (
   ctx.restore()
 }
 
+export type BeamFx = {
+  from: { x: number; y: number }
+  to: { x: number; y: number }
+  until: number
+}
+
 export const renderSnapshot = (
   ctx: CanvasRenderingContext2D,
   snapshot: StateSnapshot,
   fxMap: Map<string, FxState>,
   nowMs: number,
+  beams: BeamFx[] = [],
 ) => {
   ctx.clearRect(0, 0, ARENA.w, ARENA.h)
   ctx.fillStyle = COLORS.background
@@ -179,6 +203,19 @@ export const renderSnapshot = (
     ctx.beginPath()
     ctx.arc(bullet.x, bullet.y, 3, 0, Math.PI * 2)
     ctx.fill()
+  })
+
+  beams.forEach((beam) => {
+    if (beam.until <= nowMs) return
+    ctx.save()
+    ctx.strokeStyle = COLORS.beam
+    ctx.lineWidth = 3
+    ctx.globalAlpha = 0.85
+    ctx.beginPath()
+    ctx.moveTo(beam.from.x, beam.from.y)
+    ctx.lineTo(beam.to.x, beam.to.y)
+    ctx.stroke()
+    ctx.restore()
   })
 
   snapshot.players.forEach((player) => drawPlayer(ctx, player, fxMap.get(player.id), nowMs))
