@@ -376,47 +376,49 @@ function App() {
           </div>
 
           <aside className="scoreboard-panel">
-            <div className="match-controls">
-              {isHost ? (
-                <>
-                  <label className="match-field">
-                    <span>Duration</span>
-                    <select
-                      value={durationSec}
-                      onChange={(event) => handleDurationChange(Number(event.target.value))}
-                      disabled={match?.phase !== 'lobby'}
-                    >
-                      {Array.from({ length: 15 }, (_, index) => (index + 1) * 60).map((value) => (
-                        <option key={value} value={value}>
-                          {value}s
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="match-buttons">
-                    {match?.phase === 'lobby' ? (
-                      <button
-                        className="primary"
-                        type="button"
-                        onClick={() => connection?.send.startMatch()}
+            {isHost || match?.phase === 'lobby' ? (
+              <div className="match-controls">
+                {isHost ? (
+                  <>
+                    <label className="match-field">
+                      <span>Duration</span>
+                      <select
+                        value={durationSec}
+                        onChange={(event) => handleDurationChange(Number(event.target.value))}
+                        disabled={match?.phase !== 'lobby'}
                       >
-                        Start
-                      </button>
-                    ) : (
-                      <button
-                        className="ghost"
-                        type="button"
-                        onClick={() => connection?.send.restartMatch()}
-                      >
-                        Restart
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p className="subtle">Waiting for host…</p>
-              )}
-            </div>
+                        {Array.from({ length: 15 }, (_, index) => (index + 1) * 60).map((value) => (
+                          <option key={value} value={value}>
+                            {value}s
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="match-buttons">
+                      {match?.phase === 'lobby' ? (
+                        <button
+                          className="primary"
+                          type="button"
+                          onClick={() => connection?.send.startMatch()}
+                        >
+                          Start
+                        </button>
+                      ) : (
+                        <button
+                          className="ghost"
+                          type="button"
+                          onClick={() => connection?.send.restartMatch()}
+                        >
+                          Restart
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="subtle">Waiting for host…</p>
+                )}
+              </div>
+            ) : null}
             <div className="scoreboard">
               <div className="scoreboard-header">
                 <h2>Scoreboard</h2>
