@@ -220,13 +220,54 @@ export const renderSnapshot = (
 
   snapshot.zones.forEach((zone) => {
     if (zone.kind !== 'time_bubble') return
+    const pulse = (Math.sin(nowMs / 220) + 1) * 0.5
+    const ring = 6 + pulse * 10
     ctx.save()
-    ctx.fillStyle = 'rgba(102, 255, 190, 0.12)'
-    ctx.strokeStyle = 'rgba(102, 255, 190, 0.35)'
+    ctx.fillStyle = 'rgba(102, 255, 190, 0.08)'
+    ctx.strokeStyle = 'rgba(102, 255, 190, 0.45)'
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.arc(zone.x, zone.y, zone.r, 0, Math.PI * 2)
     ctx.fill()
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(102, 255, 190, 0.55)'
+    ctx.beginPath()
+    ctx.arc(zone.x, zone.y, zone.r - ring, 0, Math.PI * 2)
+    ctx.stroke()
+    const spokes = 8
+    ctx.strokeStyle = 'rgba(102, 255, 190, 0.35)'
+    ctx.lineWidth = 1.5
+    ctx.translate(zone.x, zone.y)
+    ctx.rotate(nowMs / 1000)
+    for (let i = 0; i < spokes; i += 1) {
+      const angle = (i / spokes) * Math.PI * 2
+      ctx.beginPath()
+      ctx.arc(0, 0, zone.r - 14, angle, angle + Math.PI / 6)
+      ctx.stroke()
+    }
+    const hourglassW = 18
+    const hourglassH = 28
+    ctx.resetTransform()
+    ctx.translate(zone.x, zone.y)
+    ctx.strokeStyle = 'rgba(200, 255, 235, 0.9)'
+    ctx.fillStyle = 'rgba(180, 255, 230, 0.35)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(-hourglassW, -hourglassH)
+    ctx.lineTo(hourglassW, -hourglassH)
+    ctx.lineTo(6, 0)
+    ctx.lineTo(hourglassW, hourglassH)
+    ctx.lineTo(-hourglassW, hourglassH)
+    ctx.lineTo(-6, 0)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(200, 255, 235, 0.7)'
+    ctx.beginPath()
+    ctx.moveTo(-hourglassW + 4, -hourglassH + 4)
+    ctx.lineTo(hourglassW - 4, -hourglassH + 4)
+    ctx.moveTo(-hourglassW + 4, hourglassH - 4)
+    ctx.lineTo(hourglassW - 4, hourglassH - 4)
     ctx.stroke()
     ctx.restore()
   })
