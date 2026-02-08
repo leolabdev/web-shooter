@@ -186,6 +186,7 @@ button:disabled {
   width: min(1300px, 100%);
   display: grid;
   gap: 18px;
+  position: relative;
 }
 
 .hud {
@@ -241,6 +242,36 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.match-controls {
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(10, 16, 30, 0.8);
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.match-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.match-field select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(20, 28, 48, 0.7);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.match-buttons {
+  display: flex;
+  gap: 8px;
 }
 
 .scoreboard {
@@ -350,6 +381,19 @@ button:disabled {
   border-radius: 0;
   border: none;
   border-top: 1px solid var(--line);
+}
+
+.toast {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(18, 26, 48, 0.9);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.85rem;
+  box-shadow: 0 10px 30px rgba(5, 10, 20, 0.4);
 }
 
 .you-tag {

@@ -7,6 +7,7 @@ import type {
     BulletState,
     ChatMessage,
     GameEvent,
+    MatchState,
     PickupState,
     StateSnapshot,
     ZoneState,
@@ -73,6 +74,7 @@ export class Room {
     readonly id: string;
     readonly maxPlayers: number;
     readonly isPrivate: boolean;
+    match: MatchState;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
     private players = new Map<string, PlayerState>();
     private latestInputs = new Map<string, PlayerInput>();
@@ -97,11 +99,17 @@ export class Room {
         io: Server<ClientToServerEvents, ServerToClientEvents>,
         maxPlayers: number,
         isPrivate: boolean,
+        hostId: string,
     ) {
         this.id = id;
         this.io = io;
         this.maxPlayers = maxPlayers;
         this.isPrivate = isPrivate;
+        this.match = {
+            phase: "lobby",
+            hostId,
+            durationSec: 300,
+        };
         this.spawnInitialPickups();
         this.startTick();
     }
@@ -121,6 +129,9 @@ export class Room {
             isEcho: false,
             heldItem: null,
         });
+        if (!this.match.hostId) {
+            this.match.hostId = player.id;
+        }
     }
 
     removePlayer(playerId: string): void {
@@ -130,6 +141,9 @@ export class Room {
         this.lastShotAtMs.delete(playerId);
         this.lastUseItemSeq.delete(playerId);
         this.dashUntilMs.delete(playerId);
+        if (this.match.hostId === playerId) {
+            this.assignNewHost();
+        }
         for (const [echoId, meta] of this.echoes.entries()) {
             if (meta.ownerId === playerId) {
                 this.echoes.delete(echoId);
@@ -200,6 +214,7 @@ export class Room {
         const dtSeconds = Math.max(0.001, (now - this.lastTickMs) / 1000);
         this.lastTickMs = now;
         const events: GameEvent[] = [];
+        const isPlaying = this.match.phase === "playing";
 
         for (const [playerId, player] of this.players.entries()) {
             if (player.isEcho) continue;
@@ -209,28 +224,34 @@ export class Room {
             const moveMult = this.getMoveMultiplier(playerId, player, now);
             this.applyMovement(player, input, dtSeconds, moveMult);
 
-            if (input.shoot) {
+            if (isPlaying && input.shoot) {
                 this.tryShoot(player, input, now, player.id);
             }
 
-            if (input.useItem && this.canUseItem(playerId, input.seq)) {
+            if (isPlaying && input.useItem && this.canUseItem(playerId, input.seq)) {
                 this.activateAbility(player, now, events);
             }
         }
 
         this.collectPickups();
         this.updateZones(now);
-        this.updateEchoes(now, dtSeconds);
+        this.updateEchoes(now, dtSeconds, isPlaying);
         stepBullets({
             bullets: this.bullets,
             players: this.players,
-            events,
+            events: isPlaying ? events : [],
             dtSeconds,
             arena: ARENA,
             onDeath: (playerId) => this.handleDeath(playerId),
             bulletSpeedMultiplier: (x, y) => this.getBulletMultiplierAt(x, y),
             isInvulnerable: (playerId) => this.isDashing(playerId, now),
+            allowDamage: isPlaying,
         });
+
+        if (this.match.phase === "playing" && this.match.endsAtMs && now >= this.match.endsAtMs) {
+            this.match.phase = "ended";
+            this.io.to(this.id).emit("match:toast", { message: "Match ended" });
+        }
 
         this.broadcastState(now, events);
     }
@@ -250,6 +271,7 @@ export class Room {
                 events,
                 pickups,
                 zones,
+                match: this.match,
             };
             this.io.to(playerId).emit("game:state", snapshot);
         }
@@ -295,6 +317,7 @@ export class Room {
         setTimeout(() => {
             const player = this.players.get(playerId);
             if (!player) return;
+            if (this.match.phase !== "playing") return;
             const spawn = this.randomSpawn();
             player.x = spawn.x;
             player.y = spawn.y;
@@ -325,7 +348,7 @@ export class Room {
         return null;
     }
 
-    private updateEchoes(nowMs: number, dtSeconds: number): void {
+    private updateEchoes(nowMs: number, dtSeconds: number, allowShoot: boolean): void {
         for (const [echoId, meta] of this.echoes.entries()) {
             const echo = this.players.get(echoId);
             if (!echo) {
@@ -342,7 +365,7 @@ export class Room {
             if (!buffered || !echo.alive) continue;
             const moveMult = this.getMoveMultiplier(meta.ownerId, echo, nowMs, true);
             this.applyMovement(echo, buffered, dtSeconds, moveMult);
-            if (buffered.shoot) {
+            if (allowShoot && buffered.shoot) {
                 this.tryShoot(echo, buffered, nowMs, meta.ownerId);
             }
         }
@@ -545,7 +568,63 @@ export class Room {
             this.lastShotAtMs.delete(playerId);
             return;
         }
-        this.scheduleRespawn(playerId);
+        if (this.match.phase === "playing") {
+            this.scheduleRespawn(playerId);
+        }
+    }
+
+    private assignNewHost(): void {
+        const nextHost = Array.from(this.players.values()).find((player) => !player.isEcho);
+        if (!nextHost) {
+            this.match.hostId = "";
+            return;
+        }
+        this.match.hostId = nextHost.id;
+        this.io.to(this.id).emit("match:toast", { message: `New host: ${nextHost.name}` });
+    }
+
+    configureMatchDuration(durationSec: number): void {
+        const clamped = Math.min(900, Math.max(60, Math.floor(durationSec || 300)));
+        this.match.durationSec = clamped;
+    }
+
+    startMatch(nowMs: number): void {
+        this.resetForMatch(true);
+        this.match.phase = "playing";
+        this.match.startedAtMs = nowMs;
+        this.match.endsAtMs = nowMs + this.match.durationSec * 1000;
+        this.io.to(this.id).emit("match:toast", { message: "Match started" });
+    }
+
+    restartMatch(): void {
+        this.match.phase = "lobby";
+        this.match.startedAtMs = undefined;
+        this.match.endsAtMs = undefined;
+        this.resetForMatch(true);
+        this.io.to(this.id).emit("match:toast", { message: "Returned to lobby" });
+    }
+
+    private resetForMatch(clearScores = false): void {
+        this.bullets.clear();
+        this.zones.clear();
+        for (const [echoId, meta] of this.echoes.entries()) {
+            this.echoes.delete(echoId);
+            this.players.delete(echoId);
+            this.lastShotAtMs.delete(echoId);
+        }
+        for (const player of this.players.values()) {
+            if (player.isEcho) continue;
+            const spawn = this.randomSpawn();
+            player.x = spawn.x;
+            player.y = spawn.y;
+            player.hp = PLAYER_HP;
+            player.alive = true;
+            player.heldItem = null;
+            if (clearScores) {
+                player.kills = 0;
+                player.deaths = 0;
+            }
+        }
     }
 }
 

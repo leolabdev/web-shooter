@@ -21,7 +21,13 @@ export class RoomManager {
 
     createRoom(player: RoomPlayer, options: CreateRoomOptions): Room {
         const roomId = this.createRoomId();
-        const room = new Room(roomId, this.io, options.maxPlayers, options.isPrivate);
+        const room = new Room(
+            roomId,
+            this.io,
+            options.maxPlayers,
+            options.isPrivate,
+            player.id,
+        );
         room.addPlayer(player);
         this.rooms.set(roomId, room);
         this.playerToRoom.set(player.id, roomId);

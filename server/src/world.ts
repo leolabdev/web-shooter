@@ -12,6 +12,7 @@ type StepParams = {
     onDeath: (playerId: string) => void;
     bulletSpeedMultiplier?: (x: number, y: number) => number;
     isInvulnerable?: (playerId: string) => boolean;
+    allowDamage?: boolean;
 };
 
 export const stepBullets = ({
@@ -23,8 +24,16 @@ export const stepBullets = ({
     onDeath,
     bulletSpeedMultiplier,
     isInvulnerable,
+    allowDamage = true,
 }: StepParams): void => {
     const removeIds = new Set<string>();
+
+    if (!allowDamage) {
+        for (const id of removeIds) {
+            bullets.delete(id);
+        }
+        return;
+    }
 
     for (const bullet of bullets.values()) {
         const speedMult = bulletSpeedMultiplier?.(bullet.x, bullet.y) ?? 1;

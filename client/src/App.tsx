@@ -9,7 +9,7 @@ import {
   Subscription,
   withLatestFrom,
 } from 'rxjs'
-import { ARENA, type ChatMessage, type StateSnapshot } from '@shared/protocol'
+import { ARENA, type ChatMessage, type MatchState, type StateSnapshot } from '@shared/protocol'
 import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
@@ -31,6 +31,8 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatOpen, setChatOpen] = useState(false)
   const [chatText, setChatText] = useState('')
+  const [toast, setToast] = useState<string | null>(null)
+  const [durationSec, setDurationSec] = useState(300)
   const [maxPlayers, setMaxPlayers] = useState(6)
   const [isPrivate, setIsPrivate] = useState(false)
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
@@ -71,6 +73,8 @@ function App() {
           setChatMessages(event.payload.messages.slice(-200))
         } else if (event.type === 'chat:message') {
           setChatMessages((prev) => [...prev, event.payload].slice(-200))
+        } else if (event.type === 'match:toast') {
+          setToast(event.payload.message)
         }
       }),
     )
@@ -131,6 +135,13 @@ function App() {
   const hasActiveEcho = (playerId: string) =>
     snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
   const heldItem = localPlayer?.heldItem ?? null
+  const match: MatchState | null = snapshot?.match ?? null
+  const isHost = match?.hostId === roomInfo?.playerId
+  const hostName =
+    snapshot?.players.find((player) => player.id === match?.hostId)?.name ?? 'Unknown'
+  const timeLeftSec = match?.endsAtMs
+    ? Math.max(0, Math.ceil((match.endsAtMs - Date.now()) / 1000))
+    : null
 
   const openChat = () => {
     chatOpenRef.current = true
@@ -165,6 +176,17 @@ function App() {
   }, [chatMessages.length])
 
   useEffect(() => {
+    if (!match) return
+    setDurationSec(match.durationSec)
+  }, [match?.durationSec])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), 2500)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+
+  useEffect(() => {
     if (!roomInfo) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Enter' && !chatOpenRef.current) {
@@ -185,6 +207,12 @@ function App() {
     connection.send.chatSend({ text })
     setChatText('')
     closeChat()
+  }
+
+  const handleDurationChange = (value: number) => {
+    setDurationSec(value)
+    if (!connection) return
+    connection.send.configureMatch({ durationSec: value })
   }
 
   return (
@@ -327,6 +355,22 @@ function App() {
               <p className="hud-label">Ability</p>
               <p className="hud-value">Press Q to use</p>
             </div>
+            <div>
+              <p className="hud-label">Phase</p>
+              <p className="hud-value">{match?.phase ?? '...'}</p>
+            </div>
+            <div>
+              <p className="hud-label">Host</p>
+              <p className="hud-value">{hostName}</p>
+            </div>
+            <div>
+              <p className="hud-label">Timer</p>
+              <p className="hud-value">
+                {match?.phase === 'playing'
+                  ? `${timeLeftSec ?? 0}s`
+                  : `${durationSec}s`}
+              </p>
+            </div>
           </header>
 
           <div className="game-main">
@@ -336,6 +380,47 @@ function App() {
           </div>
 
           <aside className="scoreboard-panel">
+            <div className="match-controls">
+              {isHost ? (
+                <>
+                  <label className="match-field">
+                    <span>Duration</span>
+                    <select
+                      value={durationSec}
+                      onChange={(event) => handleDurationChange(Number(event.target.value))}
+                      disabled={match?.phase !== 'lobby'}
+                    >
+                      {Array.from({ length: 15 }, (_, index) => (index + 1) * 60).map((value) => (
+                        <option key={value} value={value}>
+                          {value}s
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="match-buttons">
+                    {match?.phase === 'lobby' ? (
+                      <button
+                        className="primary"
+                        type="button"
+                        onClick={() => connection?.send.startMatch()}
+                      >
+                        Start
+                      </button>
+                    ) : (
+                      <button
+                        className="ghost"
+                        type="button"
+                        onClick={() => connection?.send.restartMatch()}
+                      >
+                        Restart
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="subtle">Waiting for host…</p>
+              )}
+            </div>
             <div className="scoreboard">
               <div className="scoreboard-header">
                 <h2>Scoreboard</h2>
@@ -404,6 +489,8 @@ function App() {
               </div>
             </div>
           </aside>
+
+          {toast ? <div className="toast">{toast}</div> : null}
         </section>
       )}
     </div>

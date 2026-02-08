@@ -38,6 +38,16 @@ export type GameEvent =
     | { type: "death"; id: string; byRootId?: string }
     | { type: "spawn_echo"; ownerId: string; echoId: string };
 
+export type MatchPhase = "lobby" | "playing" | "ended";
+
+export type MatchState = {
+    phase: MatchPhase;
+    hostId: string;
+    startedAtMs?: number;
+    endsAtMs?: number;
+    durationSec: number;
+};
+
 export type StateSnapshot = {
     t: number;
     roomId: string;
@@ -47,6 +57,7 @@ export type StateSnapshot = {
     events: GameEvent[];
     pickups: PickupState[];
     zones: ZoneState[];
+    match: MatchState;
 };
 
 export type ClientToServerEvents = {
@@ -66,6 +77,10 @@ export type ClientToServerEvents = {
         shoot: boolean;
         useItem: boolean; // one-shot
     }) => void;
+
+    "match:configure": (payload: { durationSec: number }) => void;
+    "match:start": () => void;
+    "match:restart": () => void;
 
     "net:ping": (payload: { t: number }) => void;
 
@@ -89,6 +104,7 @@ export type ServerToClientEvents = {
 
     "chat:message": (payload: ChatMessage) => void;
     "chat:history": (payload: { messages: ChatMessage[] }) => void;
+    "match:toast": (payload: { message: string }) => void;
 };
 
 

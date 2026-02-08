@@ -70,6 +70,31 @@ io.on("connection", (socket) => {
         broadcastRoomsList();
     });
 
+    socket.on("match:configure", ({ durationSec }) => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        if (room.match.hostId !== socket.id) return;
+        if (room.match.phase !== "lobby") return;
+        room.configureMatchDuration(durationSec);
+        io.to(room.id).emit("match:toast", { message: "Match duration updated" });
+    });
+
+    socket.on("match:start", () => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        if (room.match.hostId !== socket.id) return;
+        if (room.match.phase !== "lobby") return;
+        room.startMatch(Date.now());
+    });
+
+    socket.on("match:restart", () => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        if (room.match.hostId !== socket.id) return;
+        if (room.match.phase === "lobby") return;
+        room.restartMatch();
+    });
+
     socket.on("chat:send", ({ text }) => {
         const room = roomManager.getRoomByPlayer(socket.id);
         if (!room) return;
