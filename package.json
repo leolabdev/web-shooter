@@ -1,0 +1,10 @@
+{
+  "name": "multiverse-arena",
+  "private": true,
+  "workspaces": ["server", "client", "shared"],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w client",
+    "build": "npm run build -w server && npm run build -w client",
+    "lint": "echo \"add later\""
+  }
+}
