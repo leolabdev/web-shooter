@@ -50,7 +50,11 @@ export type StateSnapshot = {
 };
 
 export type ClientToServerEvents = {
-    "room:create": (payload: { name: string }) => void;
+    "room:create": (payload: {
+        name: string;
+        maxPlayers: number;
+        isPrivate?: boolean;
+    }) => void;
     "room:join": (payload: { roomId: string; name: string }) => void;
 
     // sent at 20Hz
@@ -70,7 +74,12 @@ export type ServerToClientEvents = {
     "room:created": (payload: { roomId: string; playerId: string }) => void;
     "room:joined": (payload: { roomId: string; playerId: string }) => void;
     "rooms:list": (payload: {
-        rooms: { roomId: string; playerCount: number }[];
+        rooms: {
+            roomId: string;
+            playerCount: number;
+            maxPlayers: number;
+            isPrivate: boolean;
+        }[];
     }) => void;
     "game:state": (payload: StateSnapshot) => void;
     "net:pong": (payload: { t: number }) => void;

@@ -70,6 +70,8 @@ const ABILITIES: AbilityType[] = ["echo", "time_bubble", "phase_dash"];
 
 export class Room {
     readonly id: string;
+    readonly maxPlayers: number;
+    readonly isPrivate: boolean;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
     private players = new Map<string, PlayerState>();
     private latestInputs = new Map<string, PlayerInput>();
@@ -91,9 +93,13 @@ export class Room {
     constructor(
         id: string,
         io: Server<ClientToServerEvents, ServerToClientEvents>,
+        maxPlayers: number,
+        isPrivate: boolean,
     ) {
         this.id = id;
         this.io = io;
+        this.maxPlayers = maxPlayers;
+        this.isPrivate = isPrivate;
         this.spawnInitialPickups();
         this.startTick();
     }
@@ -150,6 +156,10 @@ export class Room {
             if (!player.isEcho) count += 1;
         }
         return count;
+    }
+
+    isFull(): boolean {
+        return this.getPlayerCount() >= this.maxPlayers;
     }
 
     stop(): void {

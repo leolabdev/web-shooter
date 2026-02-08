@@ -22,7 +22,11 @@ function App() {
   const [snapshot, setSnapshot] = useState<StateSnapshot | null>(null)
   const [pingMs, setPingMs] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [rooms, setRooms] = useState<{ roomId: string; playerCount: number }[]>([])
+  const [rooms, setRooms] = useState<
+    { roomId: string; playerCount: number; maxPlayers: number; isPrivate: boolean }[]
+  >([])
+  const [maxPlayers, setMaxPlayers] = useState(6)
+  const [isPrivate, setIsPrivate] = useState(false)
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fxRef = useRef<Map<string, FxState>>(new Map())
@@ -128,13 +132,40 @@ function App() {
                 placeholder="ABCD"
               />
             </label>
+            <label className="field">
+              <span>Max players</span>
+              <select
+                value={maxPlayers}
+                onChange={(event) => setMaxPlayers(Number(event.target.value))}
+              >
+                {Array.from({ length: 11 }, (_, index) => index + 2).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field checkbox">
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={(event) => setIsPrivate(event.target.checked)}
+              />
+              <span>Private room</span>
+            </label>
           </div>
 
           <div className="lobby-actions">
             <button
               className="primary"
               disabled={!canCreate || !connection}
-              onClick={() => connection?.send.createRoom({ name: name.trim() })}
+              onClick={() =>
+                connection?.send.createRoom({
+                  name: name.trim(),
+                  maxPlayers,
+                  isPrivate,
+                })
+              }
             >
               Create Room
             </button>
@@ -162,11 +193,13 @@ function App() {
                   <div key={room.roomId} className="room-row">
                     <div>
                       <p className="room-id">{room.roomId}</p>
-                      <p className="room-meta">{room.playerCount} pilots</p>
+                      <p className="room-meta">
+                        {room.playerCount}/{room.maxPlayers} pilots
+                      </p>
                     </div>
                     <button
                       className="ghost"
-                      disabled={!canCreate || !connection}
+                      disabled={!canCreate || !connection || room.playerCount >= room.maxPlayers}
                       onClick={() =>
                         connection?.send.joinRoom({ roomId: room.roomId, name: name.trim() })
                       }

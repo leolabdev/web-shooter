@@ -60,10 +60,37 @@
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.field select {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: rgba(20, 28, 48, 0.7);
+  color: var(--text);
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
 .field input:focus {
   outline: none;
   border-color: var(--accent-strong);
   box-shadow: 0 0 0 2px rgba(90, 123, 255, 0.3);
+}
+
+.field select:focus {
+  outline: none;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(90, 123, 255, 0.3);
+}
+
+.field.checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.field.checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-strong);
 }
 
 .lobby-actions {

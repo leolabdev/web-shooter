@@ -15,25 +15,55 @@ const broadcastRoomsList = () => {
     io.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
 };
 
+const normalizeRoomId = (roomId: string): string => roomId.trim().toUpperCase();
+
+const normalizeName = (name: string): string => {
+    const trimmed = name.trim().slice(0, 16);
+    if (trimmed.length > 0) return trimmed;
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `Player-${suffix}`;
+};
+
+const clampMaxPlayers = (value: number | undefined): number => {
+    if (!Number.isFinite(value)) return 8;
+    return Math.min(12, Math.max(2, Math.floor(value)));
+};
+
 io.on("connection", (socket) => {
     console.log("connected", socket.id);
     socket.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
 
-    socket.on("room:create", ({ name }) => {
-        const room = roomManager.createRoom({ id: socket.id, name });
+    socket.on("room:create", ({ name, maxPlayers, isPrivate }) => {
+        const room = roomManager.createRoom(
+            { id: socket.id, name: normalizeName(name) },
+            { maxPlayers: clampMaxPlayers(maxPlayers), isPrivate: !!isPrivate },
+        );
         socket.join(room.id);
         socket.emit("room:created", { roomId: room.id, playerId: socket.id });
         broadcastRoomsList();
     });
 
     socket.on("room:join", ({ roomId, name }) => {
-        const room = roomManager.joinRoom(roomId, { id: socket.id, name });
+        const normalizedRoomId = normalizeRoomId(roomId);
+        const room = roomManager.getRoom(normalizedRoomId);
         if (!room) {
             socket.emit("error", { message: "Room not found." });
             return;
         }
-        socket.join(room.id);
-        socket.emit("room:joined", { roomId: room.id, playerId: socket.id });
+        if (room.isFull()) {
+            socket.emit("error", { message: "Room is full." });
+            return;
+        }
+        const joinedRoom = roomManager.joinRoom(normalizedRoomId, {
+            id: socket.id,
+            name: normalizeName(name),
+        });
+        if (!joinedRoom) {
+            socket.emit("error", { message: "Room not found." });
+            return;
+        }
+        socket.join(joinedRoom.id);
+        socket.emit("room:joined", { roomId: joinedRoom.id, playerId: socket.id });
         broadcastRoomsList();
     });
 

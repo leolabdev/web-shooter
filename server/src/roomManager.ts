@@ -5,6 +5,11 @@ import type {
 } from "../../shared/protocol";
 import { Room, RoomPlayer } from "./room";
 
+type CreateRoomOptions = {
+    maxPlayers: number;
+    isPrivate: boolean;
+};
+
 export class RoomManager {
     private rooms = new Map<string, Room>();
     private playerToRoom = new Map<string, string>();
@@ -14,9 +19,9 @@ export class RoomManager {
         this.io = io;
     }
 
-    createRoom(player: RoomPlayer): Room {
+    createRoom(player: RoomPlayer, options: CreateRoomOptions): Room {
         const roomId = this.createRoomId();
-        const room = new Room(roomId, this.io);
+        const room = new Room(roomId, this.io, options.maxPlayers, options.isPrivate);
         room.addPlayer(player);
         this.rooms.set(roomId, room);
         this.playerToRoom.set(player.id, roomId);
@@ -76,10 +81,19 @@ export class RoomManager {
         return roomId.trim().toUpperCase();
     }
 
-    getRoomsSummary(): { roomId: string; playerCount: number }[] {
-        return Array.from(this.rooms.values()).map((room) => ({
-            roomId: room.id,
-            playerCount: room.getPlayerCount(),
-        }));
+    getRoomsSummary(): {
+        roomId: string;
+        playerCount: number;
+        maxPlayers: number;
+        isPrivate: boolean;
+    }[] {
+        return Array.from(this.rooms.values())
+            .filter((room) => !room.isPrivate)
+            .map((room) => ({
+                roomId: room.id,
+                playerCount: room.getPlayerCount(),
+                maxPlayers: room.maxPlayers,
+                isPrivate: room.isPrivate,
+            }));
     }
 }
