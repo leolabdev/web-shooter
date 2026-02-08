@@ -40,8 +40,12 @@ export type BulletState = {
     bouncesLeft?: number;
     damage?: number;
     radius?: number;
+    r?: number;
     lastHitAtMs?: number;
     lastHitTargetId?: string;
+    isSlash?: boolean;
+    reflectsLeft?: number;
+    portalCooldownUntilMs?: number;
 };
 
 export type GameEvent =
@@ -148,7 +152,8 @@ export type AbilityType =
     | "pulse_nova"
     | "orbital_strike"
     | "linked_portals"
-    | "annihilation_bouncer";
+    | "annihilation_bouncer"
+    | "void_slice";
 
 export type PortalState = {
     id: string;

@@ -18,6 +18,7 @@ const COLORS = {
   pickupStrike: '#ff9b6b',
   pickupPortals: '#7aa5ff',
   pickupBouncer: '#ffb2f0',
+  pickupSlash: '#9ae6ff',
   shieldRing: 'rgba(124, 255, 179, 0.7)',
   beam: 'rgba(255, 225, 140, 0.85)',
   portal: 'rgba(122, 165, 255, 0.85)',
@@ -32,6 +33,7 @@ const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'orbital_strike') return 'O'
   if (type === 'linked_portals') return 'P'
   if (type === 'annihilation_bouncer') return 'B'
+  if (type === 'void_slice') return 'S'
   return 'D'
 }
 
@@ -44,6 +46,7 @@ const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'orbital_strike') return COLORS.pickupStrike
   if (type === 'linked_portals') return COLORS.pickupPortals
   if (type === 'annihilation_bouncer') return COLORS.pickupBouncer
+  if (type === 'void_slice') return COLORS.pickupSlash
   return COLORS.pickupDash
 }
 
@@ -315,7 +318,37 @@ export const renderSnapshot = (
 
   ctx.fillStyle = COLORS.bullet
   snapshot.bullets.forEach((bullet) => {
-    const radius = bullet.radius ?? 3
+    const radius = bullet.r ?? bullet.radius ?? 3
+    if (bullet.isSlash) {
+      const len = Math.hypot(bullet.vx, bullet.vy) || 1
+      const nx = bullet.vx / len
+      const ny = bullet.vy / len
+      const half = radius * 2.6
+      const arcRadius = radius * 2.8
+      ctx.save()
+      ctx.lineCap = 'round'
+      ctx.translate(bullet.x, bullet.y)
+      ctx.rotate(Math.atan2(ny, nx))
+      ctx.strokeStyle = 'rgba(18, 18, 22, 0.95)'
+      ctx.lineWidth = Math.max(5, radius * 0.95)
+      ctx.beginPath()
+      ctx.arc(0, 0, arcRadius, -0.75, 0.75)
+      ctx.stroke()
+      ctx.strokeStyle = 'rgba(120, 210, 255, 0.35)'
+      ctx.lineWidth = Math.max(2, radius * 0.35)
+      ctx.beginPath()
+      ctx.arc(0, 0, arcRadius - 6, -0.7, 0.7)
+      ctx.stroke()
+      ctx.strokeStyle = 'rgba(40, 40, 50, 0.7)'
+      ctx.lineWidth = Math.max(2, radius * 0.4)
+      ctx.beginPath()
+      ctx.moveTo(half, -radius * 0.4)
+      ctx.lineTo(half + radius * 0.9, 0)
+      ctx.lineTo(half, radius * 0.4)
+      ctx.stroke()
+      ctx.restore()
+      return
+    }
     if (typeof bullet.bouncesLeft === 'number') {
       const spin = (nowMs / 1000) * 6
       ctx.save()

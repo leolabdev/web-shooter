@@ -3,6 +3,7 @@ import type { BulletState, GameEvent, PlayerState } from "../../shared/protocol"
 const BULLET_RADIUS = 3;
 const OUT_OF_BOUNDS_MARGIN = 12;
 const BOUNCER_REHIT_MS = 120;
+const SLASH_REFLECT_SPEED_MULT = 1.2;
 
 type StepParams = {
     bullets: Map<string, BulletState>;
@@ -48,7 +49,7 @@ export const stepBullets = ({
         bullet.y += bullet.vy * dtSeconds * speedMult;
         bullet.ttlMs -= dtSeconds * 1000;
 
-        const radius = bullet.radius ?? BULLET_RADIUS;
+        const radius = bullet.r ?? bullet.radius ?? BULLET_RADIUS;
         if (typeof bullet.bouncesLeft === "number") {
             let bounced = false;
             if (bullet.x - radius < 0) {
@@ -79,6 +80,15 @@ export const stepBullets = ({
                     removeIds.add(bullet.id);
                 }
             }
+        } else if (!bullet.isSlash) {
+            const out =
+                bullet.x < -OUT_OF_BOUNDS_MARGIN ||
+                bullet.y < -OUT_OF_BOUNDS_MARGIN ||
+                bullet.x > arena.w + OUT_OF_BOUNDS_MARGIN ||
+                bullet.y > arena.h + OUT_OF_BOUNDS_MARGIN;
+            if (out) {
+                removeIds.add(bullet.id);
+            }
         } else {
             const out =
                 bullet.x < -OUT_OF_BOUNDS_MARGIN ||
@@ -91,6 +101,41 @@ export const stepBullets = ({
         }
         if (bullet.ttlMs <= 0) {
             removeIds.add(bullet.id);
+        }
+    }
+
+    const spawned: BulletState[] = [];
+    const slashes = Array.from(bullets.values()).filter((bullet) => bullet.isSlash);
+    for (const slash of slashes) {
+        if (removeIds.has(slash.id)) continue;
+        if ((slash.reflectsLeft ?? 0) <= 0) continue;
+        const slashRadius = slash.r ?? slash.radius ?? BULLET_RADIUS;
+        const slashLen = Math.hypot(slash.vx, slash.vy);
+        if (slashLen < 0.001) continue;
+        const sdx = slash.vx / slashLen;
+        const sdy = slash.vy / slashLen;
+        for (const bullet of bullets.values()) {
+            if (removeIds.has(bullet.id)) continue;
+            if (bullet.isSlash) continue;
+            if (bullet.id === slash.id) continue;
+            const bulletRadius = bullet.r ?? bullet.radius ?? BULLET_RADIUS;
+            const dx = bullet.x - slash.x;
+            const dy = bullet.y - slash.y;
+            if (dx * dx + dy * dy > (slashRadius + bulletRadius) ** 2) continue;
+            if ((slash.reflectsLeft ?? 0) <= 0) break;
+            removeIds.add(bullet.id);
+            slash.reflectsLeft = (slash.reflectsLeft ?? 0) - 1;
+            const speed = Math.max(1, Math.hypot(bullet.vx, bullet.vy));
+            spawned.push({
+                id: `${bullet.id}-r-${nowMs}`,
+                ownerId: slash.ownerId,
+                ownerRootId: slash.ownerRootId,
+                x: slash.x + sdx * (slashRadius + 4),
+                y: slash.y + sdy * (slashRadius + 4),
+                vx: sdx * speed * SLASH_REFLECT_SPEED_MULT,
+                vy: sdy * speed * SLASH_REFLECT_SPEED_MULT,
+                ttlMs: Math.max(120, bullet.ttlMs),
+            });
         }
     }
 
@@ -107,12 +152,15 @@ export const stepBullets = ({
                 break;
             }
             if (shieldHit?.(player.id, bullet.ownerRootId)) {
-                removeIds.add(bullet.id);
-                break;
+                if (!bullet.isSlash) {
+                    removeIds.add(bullet.id);
+                    break;
+                }
+                continue;
             }
             const dx = bullet.x - player.x;
             const dy = bullet.y - player.y;
-            const bulletRadius = bullet.radius ?? BULLET_RADIUS;
+            const bulletRadius = bullet.r ?? bullet.radius ?? BULLET_RADIUS;
             const hitRadius = player.r + bulletRadius;
             if (dx * dx + dy * dy <= hitRadius * hitRadius) {
                 if (
@@ -122,7 +170,7 @@ export const stepBullets = ({
                 ) {
                     continue;
                 }
-                if (typeof bullet.bouncesLeft !== "number") {
+                if (!bullet.isSlash && typeof bullet.bouncesLeft !== "number") {
                     removeIds.add(bullet.id);
                 }
                 const damage = bullet.damage ?? 1;
@@ -144,11 +192,15 @@ export const stepBullets = ({
                     });
                     onDeath(player.id);
                 }
-                if (typeof bullet.bouncesLeft !== "number") {
+                if (!bullet.isSlash && typeof bullet.bouncesLeft !== "number") {
                     break;
                 }
             }
         }
+    }
+
+    for (const bullet of spawned) {
+        bullets.set(bullet.id, bullet);
     }
 
     for (const id of removeIds) {

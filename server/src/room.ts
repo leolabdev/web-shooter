@@ -95,6 +95,11 @@ const BOUNCER_TTL_MS = 12000;
 const BOUNCER_RADIUS = 36;
 const BOUNCER_DAMAGE = 1;
 const BOUNCER_BOUNCES = 6;
+const SLASH_SPEED = 480;
+const SLASH_TTL_MS = 3000;
+const SLICE_RADIUS = 48;
+const SLASH_DAMAGE = 5;
+const SLASH_REFLECTS = 20;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
@@ -121,6 +126,7 @@ const ABILITIES: AbilityType[] = [
     "orbital_strike",
     "linked_portals",
     "annihilation_bouncer",
+    "void_slice",
 ];
 
 export class Room {
@@ -268,7 +274,7 @@ export class Room {
         this.strikes = this.strikes.filter((strike) => strike.byId !== playerId);
         this.pendingPortals.delete(playerId);
         this.portals = this.portals.filter((portal) => portal.ownerId !== playerId);
-        this.portalCooldownUntilMs.delete(playerId);
+        this.clearPortalCooldowns(playerId);
         if (this.match.hostId === playerId) {
             this.assignNewHost();
         }
@@ -282,6 +288,15 @@ export class Room {
         for (const bullet of this.bullets.values()) {
             if (bullet.ownerRootId === playerId) {
                 this.bullets.delete(bullet.id);
+            }
+        }
+    }
+
+    private clearPortalCooldowns(entityId: string): void {
+        const prefix = `${entityId}:`;
+        for (const key of this.portalCooldownUntilMs.keys()) {
+            if (key.startsWith(prefix)) {
+                this.portalCooldownUntilMs.delete(key);
             }
         }
     }
@@ -739,6 +754,11 @@ export class Room {
             if (!fired) {
                 return;
             }
+        } else if (player.heldItem === "void_slice") {
+            const fired = this.fireVoidSlice(player, input);
+            if (!fired) {
+                return;
+            }
         }
         player.heldItem = null;
     }
@@ -769,6 +789,35 @@ export class Room {
         return true;
     }
 
+    private fireVoidSlice(player: PlayerState, input: PlayerInput): boolean {
+        if (player.isEcho) return false;
+        const dx = input.aim.x - player.x;
+        const dy = input.aim.y - player.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.001) return false;
+        const nx = dx / length;
+        const ny = dy / length;
+        const spawnOffset = player.r + 8;
+        const bullet: BulletState = {
+            id: `${this.id}-s-${this.bulletSeq++}`,
+            ownerId: player.id,
+            ownerRootId: player.id,
+            x: player.x + nx * spawnOffset,
+            y: player.y + ny * spawnOffset,
+            vx: nx * SLASH_SPEED,
+            vy: ny * SLASH_SPEED,
+            ttlMs: SLASH_TTL_MS,
+            isSlash: true,
+            damage: SLASH_DAMAGE,
+            r: SLICE_RADIUS,
+            reflectsLeft: SLASH_REFLECTS,
+            portalJumpsLeft: PORTAL_BULLET_JUMPS,
+            portalCooldownUntilMs: 0,
+        };
+        this.bullets.set(bullet.id, bullet);
+        return true;
+    }
+
     private beginStrikeTargeting(player: PlayerState, nowMs: number): void {
         if (player.isEcho) return;
         const pending = this.pendingStrikes.get(player.id);
@@ -782,10 +831,6 @@ export class Room {
 
     private beginPortalPlacement(player: PlayerState, nowMs: number): void {
         if (player.isEcho) return;
-        const existing = this.portals.find(
-            (portal) => portal.ownerId === player.id && portal.expiresAtMs && nowMs < portal.expiresAtMs,
-        );
-        if (existing) return;
         if (this.pendingPortals.has(player.id)) return;
         const portal: PortalState = {
             id: `${this.id}-p-${this.portalSeq++}`,
@@ -967,20 +1012,21 @@ export class Room {
             const b = portal.b;
             for (const entity of this.players.values()) {
                 if (!entity.alive) continue;
-                const cooldown = this.portalCooldownUntilMs.get(entity.id) ?? 0;
+                const cooldownKey = `${entity.id}:${portal.id}`;
+                const cooldown = this.portalCooldownUntilMs.get(cooldownKey) ?? 0;
                 if (nowMs < cooldown) continue;
                 if (isInsideCircle(entity.x, entity.y, a.x, a.y, a.r + entity.r)) {
                     entity.x = b.x;
                     entity.y = b.y;
                     this.portalCooldownUntilMs.set(
-                        entity.id,
+                        cooldownKey,
                         nowMs + PORTAL_ENTITY_COOLDOWN_MS,
                     );
                 } else if (isInsideCircle(entity.x, entity.y, b.x, b.y, b.r + entity.r)) {
                     entity.x = a.x;
                     entity.y = a.y;
                     this.portalCooldownUntilMs.set(
-                        entity.id,
+                        cooldownKey,
                         nowMs + PORTAL_ENTITY_COOLDOWN_MS,
                     );
                 }
@@ -996,16 +1042,26 @@ export class Room {
             for (const bullet of this.bullets.values()) {
                 const jumpsLeft = bullet.portalJumpsLeft ?? PORTAL_BULLET_JUMPS;
                 if (jumpsLeft <= 0) continue;
-                const cooldown = bullet.bulletPortalCooldownUntilMs ?? 0;
+                const cooldown = bullet.isSlash
+                    ? bullet.portalCooldownUntilMs ?? 0
+                    : bullet.bulletPortalCooldownUntilMs ?? 0;
                 if (nowMs < cooldown) continue;
                 if (isInsideCircle(bullet.x, bullet.y, a.x, a.y, a.r)) {
                     this.teleportBullet(bullet, b);
                     bullet.portalJumpsLeft = jumpsLeft - 1;
-                    bullet.bulletPortalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                    if (bullet.isSlash) {
+                        bullet.portalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                    } else {
+                        bullet.bulletPortalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                    }
                 } else if (isInsideCircle(bullet.x, bullet.y, b.x, b.y, b.r)) {
                     this.teleportBullet(bullet, a);
                     bullet.portalJumpsLeft = jumpsLeft - 1;
-                    bullet.bulletPortalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                    if (bullet.isSlash) {
+                        bullet.portalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                    } else {
+                        bullet.bulletPortalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                    }
                 }
             }
         }
