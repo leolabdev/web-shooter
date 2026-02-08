@@ -1,10 +1,17 @@
 {
   "name": "multiverse-arena",
   "private": true,
-  "workspaces": ["server", "client", "shared"],
+  "workspaces": [
+    "server",
+    "client",
+    "shared"
+  ],
   "scripts": {
-    "dev": "npm run dev -w server & npm run dev -w client",
-    "build": "npm run build -w server && npm run build -w client",
-    "lint": "echo \"add later\""
+    "dev": "concurrently -n server,client \"npm -w server run dev\" \"npm -w client run dev\"",
+    "dev:server": "npm -w server run dev",
+    "dev:client": "npm -w client run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }
