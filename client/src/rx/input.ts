@@ -24,12 +24,18 @@ const mapAimToArena = (event: MouseEvent, canvas: HTMLCanvasElement): Vec2 => {
   return { x: clamp(x, 0, ARENA.w), y: clamp(y, 0, ARENA.h) }
 }
 
-export const createInputPackets = (canvas: HTMLCanvasElement) => {
+export const createInputPackets = (
+  canvas: HTMLCanvasElement,
+  options?: { isKeyboardEnabled?: () => boolean },
+) => {
   const keyEvents$ = merge(
     fromEvent<KeyboardEvent>(window, 'keydown').pipe(map((event) => ({ event, down: true }))),
     fromEvent<KeyboardEvent>(window, 'keyup').pipe(map((event) => ({ event, down: false }))),
   ).pipe(
-    filter(({ event }) => ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)),
+    filter(({ event }) => {
+      if (options?.isKeyboardEnabled && !options.isKeyboardEnabled()) return false
+      return ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)
+    }),
   )
 
   const keys$ = keyEvents$.pipe(
@@ -64,7 +70,10 @@ export const createInputPackets = (canvas: HTMLCanvasElement) => {
   ).pipe(startWith(false), distinctUntilChanged())
 
   const item$ = fromEvent<KeyboardEvent>(window, 'keydown').pipe(
-    filter((event) => (event.code === 'KeyQ' || event.key === 'q') && !event.repeat),
+    filter((event) => {
+      if (options?.isKeyboardEnabled && !options.isKeyboardEnabled()) return false
+      return (event.code === 'KeyQ' || event.key === 'q') && !event.repeat
+    }),
     map(() => 1),
     scan((count, inc) => count + inc, 0),
     startWith(0),

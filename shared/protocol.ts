@@ -68,6 +68,8 @@ export type ClientToServerEvents = {
     }) => void;
 
     "net:ping": (payload: { t: number }) => void;
+
+    "chat:send": (payload: { text: string }) => void;
 };
 
 export type ServerToClientEvents = {
@@ -84,6 +86,9 @@ export type ServerToClientEvents = {
     "game:state": (payload: StateSnapshot) => void;
     "net:pong": (payload: { t: number }) => void;
     "error": (payload: { message: string }) => void;
+
+    "chat:message": (payload: ChatMessage) => void;
+    "chat:history": (payload: { messages: ChatMessage[] }) => void;
 };
 
 
@@ -104,4 +109,13 @@ export type ZoneState = {
     y: number;
     r: number;
     expiresAtMs: number;
+};
+
+export type ChatMessage = {
+    id: string;
+    roomId: string;
+    fromId: string;
+    fromName: string;
+    text: string;
+    t: number;
 };

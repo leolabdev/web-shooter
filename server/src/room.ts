@@ -5,6 +5,7 @@ import type {
     AbilityType,
     PlayerState,
     BulletState,
+    ChatMessage,
     GameEvent,
     PickupState,
     StateSnapshot,
@@ -83,6 +84,7 @@ export class Room {
     private echoes = new Map<string, EchoMeta>();
     private pickups = new Map<string, PickupState>();
     private zones = new Map<string, ZoneState>();
+    private chatMessages: ChatMessage[] = [];
     private tickTimer: NodeJS.Timeout | null = null;
     private lastTickMs = Date.now();
     private bulletSeq = 0;
@@ -156,6 +158,21 @@ export class Room {
             if (!player.isEcho) count += 1;
         }
         return count;
+    }
+
+    getPlayerName(playerId: string): string | null {
+        return this.players.get(playerId)?.name ?? null;
+    }
+
+    getChatHistory(): ChatMessage[] {
+        return this.chatMessages;
+    }
+
+    addChatMessage(message: ChatMessage): void {
+        this.chatMessages.push(message);
+        if (this.chatMessages.length > 50) {
+            this.chatMessages = this.chatMessages.slice(-50);
+        }
     }
 
     isFull(): boolean {

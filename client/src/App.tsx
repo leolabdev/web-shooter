@@ -8,7 +8,7 @@ import {
   Subscription,
   withLatestFrom,
 } from 'rxjs'
-import { ARENA, type StateSnapshot } from '@shared/protocol'
+import { ARENA, type ChatMessage, type StateSnapshot } from '@shared/protocol'
 import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
@@ -26,12 +26,17 @@ function App() {
   const [rooms, setRooms] = useState<
     { roomId: string; playerCount: number; maxPlayers: number; isPrivate: boolean }[]
   >([])
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatText, setChatText] = useState('')
   const [maxPlayers, setMaxPlayers] = useState(6)
   const [isPrivate, setIsPrivate] = useState(false)
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fxRef = useRef<Map<string, FxState>>(new Map())
   const interpolatorRef = useRef(createSnapshotInterpolator())
+  const chatInputRef = useRef<HTMLInputElement | null>(null)
+  const chatOpenRef = useRef(false)
 
   useEffect(() => {
     const conn = connectSocket()
@@ -51,12 +56,17 @@ function App() {
           setRoomInfo({ roomId: event.payload.roomId, playerId: event.payload.playerId })
           setRoomId(event.payload.roomId)
           setError(null)
+          setChatMessages([])
         } else if (event.type === 'rooms:list') {
           setRooms(event.payload.rooms)
         } else if (event.type === 'error') {
           setError(event.payload.message)
         } else if (event.type === 'net:pong') {
           setPingMs(Date.now() - event.payload.t)
+        } else if (event.type === 'chat:history') {
+          setChatMessages(event.payload.messages.slice(-100))
+        } else if (event.type === 'chat:message') {
+          setChatMessages((prev) => [...prev, event.payload].slice(-100))
         }
       }),
     )
@@ -87,7 +97,11 @@ function App() {
         setSnapshot(nextSnapshot)
       }),
     )
-    subs.add(createInputPackets(canvas).subscribe((packet) => connection.send.input(packet)))
+    subs.add(
+      createInputPackets(canvas, { isKeyboardEnabled: () => !chatOpenRef.current }).subscribe(
+        (packet) => connection.send.input(packet),
+      ),
+    )
     subs.add(
       animationFrames()
         .pipe(withLatestFrom(state$))
@@ -112,6 +126,37 @@ function App() {
   const hasActiveEcho = (playerId: string) =>
     snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
   const heldItem = localPlayer?.heldItem ?? null
+
+  useEffect(() => {
+    chatOpenRef.current = chatOpen
+    if (chatOpen) {
+      chatInputRef.current?.focus()
+    }
+  }, [chatOpen])
+
+  useEffect(() => {
+    if (!roomInfo) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Enter' && !chatOpenRef.current) {
+        event.preventDefault()
+        setChatOpen(true)
+      } else if (event.code === 'Escape' && chatOpenRef.current) {
+        event.preventDefault()
+        setChatOpen(false)
+        setChatText('')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [roomInfo])
+
+  const submitChat = () => {
+    const text = chatText.trim()
+    if (!text || !connection) return
+    connection.send.chatSend({ text })
+    setChatText('')
+    setChatOpen(false)
+  }
 
   return (
     <div className="app">
@@ -281,6 +326,45 @@ function App() {
               ))}
             </div>
           </aside>
+
+          <div className="chat-panel">
+            <div className="chat-messages">
+              {chatMessages.map((message) => (
+                <div key={message.id} className="chat-line">
+                  <span className="chat-name">{message.fromName}:</span>
+                  <span className="chat-text">{message.text}</span>
+                </div>
+              ))}
+            </div>
+            <div className="chat-input">
+              {chatOpen ? (
+                <input
+                  ref={chatInputRef}
+                  value={chatText}
+                  onChange={(event) => setChatText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.code === 'Enter') {
+                      event.preventDefault()
+                      submitChat()
+                    } else if (event.code === 'Escape') {
+                      event.preventDefault()
+                      setChatOpen(false)
+                      setChatText('')
+                    }
+                  }}
+                  placeholder="Type message..."
+                />
+              ) : (
+                <button
+                  className="ghost"
+                  type="button"
+                  onClick={() => setChatOpen(true)}
+                >
+                  Press Enter to chat
+                </button>
+              )}
+            </div>
+          </div>
         </section>
       )}
     </div>

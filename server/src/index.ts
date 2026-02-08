@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import type {
+    ChatMessage,
     ClientToServerEvents,
     ServerToClientEvents,
 } from "../../shared/protocol";
@@ -40,6 +41,7 @@ io.on("connection", (socket) => {
         );
         socket.join(room.id);
         socket.emit("room:created", { roomId: room.id, playerId: socket.id });
+        socket.emit("chat:history", { messages: room.getChatHistory() });
         broadcastRoomsList();
     });
 
@@ -64,7 +66,26 @@ io.on("connection", (socket) => {
         }
         socket.join(joinedRoom.id);
         socket.emit("room:joined", { roomId: joinedRoom.id, playerId: socket.id });
+        socket.emit("chat:history", { messages: joinedRoom.getChatHistory() });
         broadcastRoomsList();
+    });
+
+    socket.on("chat:send", ({ text }) => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        const normalized = text.trim().slice(0, 120);
+        if (!normalized) return;
+        const fromName = room.getPlayerName(socket.id) ?? "Unknown";
+        const message: ChatMessage = {
+            id: Math.random().toString(36).slice(2, 8),
+            roomId: room.id,
+            fromId: socket.id,
+            fromName,
+            text: normalized,
+            t: Date.now(),
+        };
+        room.addChatMessage(message);
+        io.to(room.id).emit("chat:message", message);
     });
 
     socket.on("player:input", (payload) => {

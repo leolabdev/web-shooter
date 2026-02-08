@@ -186,6 +186,7 @@ button:disabled {
   width: min(1300px, 100%);
   display: grid;
   gap: 18px;
+  position: relative;
 }
 
 .hud {
@@ -275,6 +276,64 @@ button:disabled {
 .score-hp {
   color: var(--text);
   font-size: 0.8rem;
+}
+
+.chat-panel {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: min(320px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.chat-messages {
+  max-height: 220px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(8, 12, 22, 0.7);
+  border: 1px solid var(--line);
+  pointer-events: auto;
+}
+
+.chat-line {
+  display: flex;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.chat-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chat-text {
+  color: var(--text-muted);
+}
+
+.chat-input {
+  pointer-events: auto;
+}
+
+.chat-input input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(12, 18, 34, 0.9);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.chat-input button {
+  width: 100%;
 }
 
 .you-tag {
