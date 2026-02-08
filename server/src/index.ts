@@ -10,7 +10,7 @@ const httpServer = createServer();
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: { origin: "*" },
 });
-const roomManager = new RoomManager();
+const roomManager = new RoomManager(io);
 
 io.on("connection", (socket) => {
     console.log("connected", socket.id);
@@ -29,6 +29,16 @@ io.on("connection", (socket) => {
         }
         socket.join(room.id);
         socket.emit("room:joined", { roomId: room.id, playerId: socket.id });
+    });
+
+    socket.on("player:input", (payload) => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        room.handleInput(socket.id, payload);
+    });
+
+    socket.on("net:ping", ({ t }) => {
+        socket.emit("net:pong", { t });
     });
 
     socket.on("disconnect", () => {
