@@ -12,6 +12,7 @@ import { ARENA, type StateSnapshot } from '@shared/protocol'
 import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
+import { createSnapshotInterpolator } from './rx/interpolation'
 import { renderSnapshot } from './render/canvasRenderer'
 import { updateFxRegistry, type FxState } from './render/fx'
 
@@ -30,6 +31,7 @@ function App() {
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fxRef = useRef<Map<string, FxState>>(new Map())
+  const interpolatorRef = useRef(createSnapshotInterpolator())
 
   useEffect(() => {
     const conn = connectSocket()
@@ -81,6 +83,7 @@ function App() {
     subs.add(
       state$.subscribe((nextSnapshot) => {
         updateFxRegistry(nextSnapshot, fxRef.current, performance.now())
+        interpolatorRef.current.pushSnapshot(nextSnapshot, performance.now())
         setSnapshot(nextSnapshot)
       }),
     )
@@ -89,7 +92,12 @@ function App() {
       animationFrames()
         .pipe(withLatestFrom(state$))
         .subscribe(([frame, latest]) => {
-          renderSnapshot(ctx, latest, fxRef.current, frame.timestamp)
+          const renderState = interpolatorRef.current.getInterpolatedState(frame.timestamp)
+          if (renderState) {
+            renderSnapshot(ctx, renderState, fxRef.current, frame.timestamp)
+          } else {
+            renderSnapshot(ctx, latest, fxRef.current, frame.timestamp)
+          }
         }),
     )
 
