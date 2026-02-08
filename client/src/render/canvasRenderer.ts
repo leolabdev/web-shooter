@@ -275,6 +275,36 @@ export const renderSnapshot = (
   ctx.fillStyle = COLORS.bullet
   snapshot.bullets.forEach((bullet) => {
     const radius = bullet.radius ?? 3
+    if (typeof bullet.bouncesLeft === 'number') {
+      const spin = (nowMs / 1000) * 6
+      ctx.save()
+      ctx.translate(bullet.x, bullet.y)
+      ctx.rotate(spin)
+      ctx.fillStyle = 'rgba(255, 206, 120, 0.9)'
+      ctx.beginPath()
+      ctx.arc(0, 0, radius * 0.55, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(160, 168, 176, 0.9)'
+      ctx.lineWidth = Math.max(2, radius * 0.18)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius * 0.9, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(130, 138, 146, 0.95)'
+      const teeth = 10
+      for (let i = 0; i < teeth; i += 1) {
+        const angle = (i / teeth) * Math.PI * 2
+        const inner = radius * 0.7
+        const outer = radius * 1.05
+        ctx.beginPath()
+        ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner)
+        ctx.lineTo(Math.cos(angle + 0.12) * outer, Math.sin(angle + 0.12) * outer)
+        ctx.lineTo(Math.cos(angle + 0.24) * inner, Math.sin(angle + 0.24) * inner)
+        ctx.closePath()
+        ctx.fill()
+      }
+      ctx.restore()
+      return
+    }
     ctx.beginPath()
     ctx.arc(bullet.x, bullet.y, radius, 0, Math.PI * 2)
     ctx.fill()
