@@ -1074,6 +1074,8 @@ export class Room {
         const offset = portal.r + 6;
         bullet.x = portal.x + nx * offset;
         bullet.y = portal.y + ny * offset;
+        bullet.vx = -bullet.vx;
+        bullet.vy = -bullet.vy;
     }
 
     private getMoveMultiplier(
