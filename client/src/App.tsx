@@ -13,6 +13,7 @@ import './App.css'
 import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
 import { renderSnapshot } from './render/canvasRenderer'
+import { updateFxRegistry, type FxState } from './render/fx'
 
 function App() {
   const [name, setName] = useState('')
@@ -24,6 +25,7 @@ function App() {
   const [rooms, setRooms] = useState<{ roomId: string; playerCount: number }[]>([])
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const fxRef = useRef<Map<string, FxState>>(new Map())
 
   useEffect(() => {
     const conn = connectSocket()
@@ -72,13 +74,18 @@ function App() {
     )
 
     const subs = new Subscription()
-    subs.add(state$.subscribe(setSnapshot))
+    subs.add(
+      state$.subscribe((nextSnapshot) => {
+        updateFxRegistry(nextSnapshot, fxRef.current, performance.now())
+        setSnapshot(nextSnapshot)
+      }),
+    )
     subs.add(createInputPackets(canvas).subscribe((packet) => connection.send.input(packet)))
     subs.add(
       animationFrames()
         .pipe(withLatestFrom(state$))
-        .subscribe(([, latest]) => {
-          renderSnapshot(ctx, latest)
+        .subscribe(([frame, latest]) => {
+          renderSnapshot(ctx, latest, fxRef.current, frame.timestamp)
         }),
     )
 
