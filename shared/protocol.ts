@@ -18,9 +18,9 @@ export type PlayerState = {
     isEcho: boolean;
     ownerId?: string;
 
-    // included for the owning (real) player
-    echoCdMs?: number;
+    heldItem?: AbilityType | null;
 };
+
 
 export type BulletState = {
     id: string;
@@ -45,6 +45,8 @@ export type StateSnapshot = {
     players: PlayerState[];
     bullets: BulletState[];
     events: GameEvent[];
+    pickups: PickupState[];
+    zones: ZoneState[];
 };
 
 export type ClientToServerEvents = {
@@ -58,7 +60,7 @@ export type ClientToServerEvents = {
         keys: Keys;
         aim: Vec2; // aim in arena coords (0..w, 0..h)
         shoot: boolean;
-        useEcho: boolean; // one-shot
+        useItem: boolean; // one-shot
     }) => void;
 
     "net:ping": (payload: { t: number }) => void;
@@ -73,4 +75,24 @@ export type ServerToClientEvents = {
     "game:state": (payload: StateSnapshot) => void;
     "net:pong": (payload: { t: number }) => void;
     "error": (payload: { message: string }) => void;
+};
+
+
+export type AbilityType = "echo" | "time_bubble" | "phase_dash" | "portal_swap";
+
+export type PickupState = {
+    id: string;
+    type: AbilityType;
+    x: number;
+    y: number;
+    r: number;
+};
+
+export type ZoneState = {
+    id: string;
+    kind: "time_bubble";
+    x: number;
+    y: number;
+    r: number;
+    expiresAtMs: number;
 };
