@@ -24,10 +24,11 @@ export class RoomManager {
     }
 
     joinRoom(roomId: string, player: RoomPlayer): Room | null {
-        const room = this.rooms.get(roomId);
+        const normalizedRoomId = this.normalizeRoomId(roomId);
+        const room = this.rooms.get(normalizedRoomId);
         if (!room) return null;
         room.addPlayer(player);
-        this.playerToRoom.set(player.id, roomId);
+        this.playerToRoom.set(player.id, normalizedRoomId);
         return room;
     }
 
@@ -49,7 +50,8 @@ export class RoomManager {
     }
 
     getRoom(roomId: string): Room | null {
-        return this.rooms.get(roomId) ?? null;
+        const normalizedRoomId = this.normalizeRoomId(roomId);
+        return this.rooms.get(normalizedRoomId) ?? null;
     }
 
     getRoomByPlayer(playerId: string): Room | null {
@@ -67,6 +69,17 @@ export class RoomManager {
     }
 
     private randomId(): string {
-        return Math.random().toString(36).slice(2, 8);
+        return Math.random().toString(36).slice(2, 8).toUpperCase();
+    }
+
+    private normalizeRoomId(roomId: string): string {
+        return roomId.trim().toUpperCase();
+    }
+
+    getRoomsSummary(): { roomId: string; playerCount: number }[] {
+        return Array.from(this.rooms.values()).map((room) => ({
+            roomId: room.id,
+            playerCount: room.getPlayerCount(),
+        }));
     }
 }

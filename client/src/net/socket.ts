@@ -4,6 +4,7 @@ import type { ClientToServerEvents, ServerToClientEvents } from '@shared/protoco
 
 type RoomCreatedPayload = Parameters<ServerToClientEvents['room:created']>[0]
 type RoomJoinedPayload = Parameters<ServerToClientEvents['room:joined']>[0]
+type RoomsListPayload = Parameters<ServerToClientEvents['rooms:list']>[0]
 type GameStatePayload = Parameters<ServerToClientEvents['game:state']>[0]
 type ErrorPayload = Parameters<ServerToClientEvents['error']>[0]
 type PongPayload = Parameters<ServerToClientEvents['net:pong']>[0]
@@ -11,6 +12,7 @@ type PongPayload = Parameters<ServerToClientEvents['net:pong']>[0]
 export type WsInEvent =
   | { type: 'room:created'; payload: RoomCreatedPayload }
   | { type: 'room:joined'; payload: RoomJoinedPayload }
+  | { type: 'rooms:list'; payload: RoomsListPayload }
   | { type: 'game:state'; payload: GameStatePayload }
   | { type: 'error'; payload: ErrorPayload }
   | { type: 'net:pong'; payload: PongPayload }
@@ -25,6 +27,8 @@ export const connectSocket = () => {
       subscriber.next({ type: 'room:created', payload })
     const onRoomJoined = (payload: RoomJoinedPayload) =>
       subscriber.next({ type: 'room:joined', payload })
+    const onRoomsList = (payload: RoomsListPayload) =>
+      subscriber.next({ type: 'rooms:list', payload })
     const onGameState = (payload: GameStatePayload) =>
       subscriber.next({ type: 'game:state', payload })
     const onError = (payload: ErrorPayload) => subscriber.next({ type: 'error', payload })
@@ -32,6 +36,7 @@ export const connectSocket = () => {
 
     socket.on('room:created', onRoomCreated)
     socket.on('room:joined', onRoomJoined)
+    socket.on('rooms:list', onRoomsList)
     socket.on('game:state', onGameState)
     socket.on('error', onError)
     socket.on('net:pong', onPong)
@@ -39,6 +44,7 @@ export const connectSocket = () => {
     return () => {
       socket.off('room:created', onRoomCreated)
       socket.off('room:joined', onRoomJoined)
+      socket.off('rooms:list', onRoomsList)
       socket.off('game:state', onGameState)
       socket.off('error', onError)
       socket.off('net:pong', onPong)

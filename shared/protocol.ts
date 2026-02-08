@@ -67,6 +67,9 @@ export type ClientToServerEvents = {
 export type ServerToClientEvents = {
     "room:created": (payload: { roomId: string; playerId: string }) => void;
     "room:joined": (payload: { roomId: string; playerId: string }) => void;
+    "rooms:list": (payload: {
+        rooms: { roomId: string; playerCount: number }[];
+    }) => void;
     "game:state": (payload: StateSnapshot) => void;
     "net:pong": (payload: { t: number }) => void;
     "error": (payload: { message: string }) => void;

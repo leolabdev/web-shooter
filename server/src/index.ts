@@ -11,14 +11,19 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: { origin: "*" },
 });
 const roomManager = new RoomManager(io);
+const broadcastRoomsList = () => {
+    io.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
+};
 
 io.on("connection", (socket) => {
     console.log("connected", socket.id);
+    socket.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
 
     socket.on("room:create", ({ name }) => {
         const room = roomManager.createRoom({ id: socket.id, name });
         socket.join(room.id);
         socket.emit("room:created", { roomId: room.id, playerId: socket.id });
+        broadcastRoomsList();
     });
 
     socket.on("room:join", ({ roomId, name }) => {
@@ -29,6 +34,7 @@ io.on("connection", (socket) => {
         }
         socket.join(room.id);
         socket.emit("room:joined", { roomId: room.id, playerId: socket.id });
+        broadcastRoomsList();
     });
 
     socket.on("player:input", (payload) => {
@@ -43,6 +49,7 @@ io.on("connection", (socket) => {
 
     socket.on("disconnect", () => {
         roomManager.removePlayer(socket.id);
+        broadcastRoomsList();
         console.log("disconnected", socket.id);
     });
 });

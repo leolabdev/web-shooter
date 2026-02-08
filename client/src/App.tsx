@@ -21,6 +21,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<StateSnapshot | null>(null)
   const [pingMs, setPingMs] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [rooms, setRooms] = useState<{ roomId: string; playerCount: number }[]>([])
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -42,6 +43,8 @@ function App() {
           setRoomInfo({ roomId: event.payload.roomId, playerId: event.payload.playerId })
           setRoomId(event.payload.roomId)
           setError(null)
+        } else if (event.type === 'rooms:list') {
+          setRooms(event.payload.rooms)
         } else if (event.type === 'error') {
           setError(event.payload.message)
         } else if (event.type === 'net:pong') {
@@ -133,6 +136,36 @@ function App() {
             >
               Join Room
             </button>
+          </div>
+
+          <div className="room-list">
+            <div className="room-list-header">
+              <h2>Active Rooms</h2>
+              <span className="subtle">{rooms.length} live</span>
+            </div>
+            {rooms.length === 0 ? (
+              <p className="subtle">No rooms yet. Create one to start the match.</p>
+            ) : (
+              <div className="room-list-body">
+                {rooms.map((room) => (
+                  <div key={room.roomId} className="room-row">
+                    <div>
+                      <p className="room-id">{room.roomId}</p>
+                      <p className="room-meta">{room.playerCount} pilots</p>
+                    </div>
+                    <button
+                      className="ghost"
+                      disabled={!canCreate || !connection}
+                      onClick={() =>
+                        connection?.send.joinRoom({ roomId: room.roomId, name: name.trim() })
+                      }
+                    >
+                      Join
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {error ? <p className="error">{error}</p> : null}

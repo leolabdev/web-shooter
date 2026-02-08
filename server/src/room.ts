@@ -78,6 +78,10 @@ export class Room {
         return this.players.size === 0;
     }
 
+    getPlayerCount(): number {
+        return this.players.size;
+    }
+
     stop(): void {
         if (this.tickTimer) {
             clearInterval(this.tickTimer);
