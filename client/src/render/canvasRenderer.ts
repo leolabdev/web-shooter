@@ -1,4 +1,5 @@
 import { ARENA, type PlayerState, type StateSnapshot } from '@shared/protocol'
+import { colorFromId } from './colors'
 import type { FxState } from './fx'
 
 const COLORS = {
@@ -11,19 +12,6 @@ const COLORS = {
   pickupEcho: '#7ef1ff',
   pickupTime: '#7cffb3',
   pickupDash: '#ffb86b',
-}
-
-const hashString = (value: string) => {
-  let hash = 5381
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 33) ^ value.charCodeAt(i)
-  }
-  return Math.abs(hash)
-}
-
-const colorFromId = (id: string) => {
-  const hue = hashString(id) % 360
-  return `hsl(${hue} 80% 55%)`
 }
 
 const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {

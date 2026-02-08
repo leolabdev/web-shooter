@@ -14,6 +14,7 @@ import { connectSocket } from './net/socket'
 import { createInputPackets } from './rx/input'
 import { createSnapshotInterpolator } from './rx/interpolation'
 import { renderSnapshot } from './render/canvasRenderer'
+import { colorFromId } from './render/colors'
 import { updateFxRegistry, type FxState } from './render/fx'
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
   const interpolatorRef = useRef(createSnapshotInterpolator())
   const chatInputRef = useRef<HTMLInputElement | null>(null)
   const chatOpenRef = useRef(false)
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const conn = connectSocket()
@@ -64,9 +66,9 @@ function App() {
         } else if (event.type === 'net:pong') {
           setPingMs(Date.now() - event.payload.t)
         } else if (event.type === 'chat:history') {
-          setChatMessages(event.payload.messages.slice(-100))
+          setChatMessages(event.payload.messages.slice(-200))
         } else if (event.type === 'chat:message') {
-          setChatMessages((prev) => [...prev, event.payload].slice(-100))
+          setChatMessages((prev) => [...prev, event.payload].slice(-200))
         }
       }),
     )
@@ -133,6 +135,15 @@ function App() {
       chatInputRef.current?.focus()
     }
   }, [chatOpen])
+
+  useEffect(() => {
+    const container = chatScrollRef.current
+    if (!container) return
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40
+    if (isNearBottom) {
+      container.scrollTop = container.scrollHeight
+    }
+  }, [chatMessages.length])
 
   useEffect(() => {
     if (!roomInfo) return
@@ -300,71 +311,81 @@ function App() {
             </div>
           </header>
 
-          <div className="canvas-shell">
-            <canvas ref={canvasRef} width={ARENA.w} height={ARENA.h} />
+          <div className="game-main">
+            <div className="canvas-shell">
+              <canvas ref={canvasRef} width={ARENA.w} height={ARENA.h} />
+            </div>
           </div>
 
-          <aside className="scoreboard">
-            <div className="scoreboard-header">
-              <h2>Scoreboard</h2>
-              <span className="subtle">{realPlayers.length} pilots</span>
+          <aside className="scoreboard-panel">
+            <div className="scoreboard">
+              <div className="scoreboard-header">
+                <h2>Scoreboard</h2>
+                <span className="subtle">{realPlayers.length} pilots</span>
+              </div>
+              <div className="score-list">
+                {realPlayers.map((player) => (
+                  <div key={player.id} className="score-row">
+                    <div className="score-name">
+                      <span className={player.id === roomInfo.playerId ? 'you-tag' : undefined}>
+                        {player.name}
+                        {hasActiveEcho(player.id) ? ' (Echo)' : ''}
+                      </span>
+                    </div>
+                    <div className="score-kd">
+                      {player.kills}/{player.deaths}
+                      <span className="score-hp">HP {player.hp}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="score-list">
-              {realPlayers.map((player) => (
-                <div key={player.id} className="score-row">
-                  <div className="score-name">
-                    <span className={player.id === roomInfo.playerId ? 'you-tag' : undefined}>
-                      {player.name}
-                      {hasActiveEcho(player.id) ? ' (Echo)' : ''}
+
+            <div className="chat-panel">
+              <div className="chat-messages" ref={chatScrollRef}>
+                {chatMessages.map((message) => (
+                  <div key={message.id} className="chat-line">
+                    <span
+                      className="chat-name"
+                      style={{ color: colorFromId(message.fromId) }}
+                    >
+                      {message.fromName}
                     </span>
+                    <span className="chat-sep">:</span>
+                    <span className="chat-text">{message.text}</span>
                   </div>
-                  <div className="score-kd">
-                    {player.kills}/{player.deaths}
-                    <span className="score-hp">HP {player.hp}</span>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="chat-input">
+                {chatOpen ? (
+                  <input
+                    ref={chatInputRef}
+                    value={chatText}
+                    onChange={(event) => setChatText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.code === 'Enter') {
+                        event.preventDefault()
+                        submitChat()
+                      } else if (event.code === 'Escape') {
+                        event.preventDefault()
+                        setChatOpen(false)
+                        setChatText('')
+                      }
+                    }}
+                    placeholder="Type message..."
+                  />
+                ) : (
+                  <button
+                    className="ghost"
+                    type="button"
+                    onClick={() => setChatOpen(true)}
+                  >
+                    Press Enter to chat
+                  </button>
+                )}
+              </div>
             </div>
           </aside>
-
-          <div className="chat-panel">
-            <div className="chat-messages">
-              {chatMessages.map((message) => (
-                <div key={message.id} className="chat-line">
-                  <span className="chat-name">{message.fromName}:</span>
-                  <span className="chat-text">{message.text}</span>
-                </div>
-              ))}
-            </div>
-            <div className="chat-input">
-              {chatOpen ? (
-                <input
-                  ref={chatInputRef}
-                  value={chatText}
-                  onChange={(event) => setChatText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.code === 'Enter') {
-                      event.preventDefault()
-                      submitChat()
-                    } else if (event.code === 'Escape') {
-                      event.preventDefault()
-                      setChatOpen(false)
-                      setChatText('')
-                    }
-                  }}
-                  placeholder="Type message..."
-                />
-              ) : (
-                <button
-                  className="ghost"
-                  type="button"
-                  onClick={() => setChatOpen(true)}
-                >
-                  Press Enter to chat
-                </button>
-              )}
-            </div>
-          </div>
         </section>
       )}
     </div>
