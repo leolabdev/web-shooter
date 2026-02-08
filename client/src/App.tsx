@@ -50,6 +50,7 @@ function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(300)
   const [maxPlayers, setMaxPlayers] = useState(6)
+  const [maxHp, setMaxHp] = useState(5)
   const [isPrivate, setIsPrivate] = useState(false)
   const [fillWithBots, setFillWithBots] = useState(false)
   const [botCount, setBotCount] = useState(0)
@@ -232,6 +233,7 @@ function App() {
     snapshot?.players.some((player) => player.isEcho && player.ownerId === playerId) ?? false
   const heldItem = localPlayer?.heldItem ?? null
   const shieldHp = localPlayer?.shieldHp ?? 0
+  const localMaxHp = localPlayer?.maxHp ?? 1
   const match: MatchState | null = snapshot?.match ?? null
   const isHost = match?.hostId === roomInfo?.playerId
   const hostName =
@@ -293,6 +295,14 @@ function App() {
       setBotCount(maxBotCount)
     }
   }, [botCount, maxBotCount])
+
+  useEffect(() => {
+    if (maxHp < 1) {
+      setMaxHp(1)
+    } else if (maxHp > 100) {
+      setMaxHp(100)
+    }
+  }, [maxHp])
 
   useEffect(() => {
     if (!toast) return
@@ -419,6 +429,16 @@ function App() {
                 ))}
               </select>
             </label>
+            <label className="field">
+              <span>Max HP</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={maxHp}
+                onChange={(event) => setMaxHp(Number(event.target.value))}
+              />
+            </label>
             <label className="field checkbox">
               <input
                 type="checkbox"
@@ -475,6 +495,7 @@ function App() {
                   fillWithBots,
                   botCount: fillWithBots ? botCount : 0,
                   botDifficulty,
+                  maxHp,
                 })
               }
             >
@@ -509,6 +530,7 @@ function App() {
                         {room.fillWithBots
                           ? ` · Bots: ${room.botCount} (${room.botDifficulty})`
                           : ''}
+                        {room.maxHp ? ` · HP ${room.maxHp}` : ''}
                       </p>
                     </div>
                     <button
@@ -541,7 +563,9 @@ function App() {
             </div>
             <div>
               <p className="hud-label">HP</p>
-              <p className="hud-value">{localPlayer ? localPlayer.hp : '...'}</p>
+              <p className="hud-value">
+                {localPlayer ? `${localPlayer.hp}/${localMaxHp}` : '...'}
+              </p>
             </div>
             <div>
               <p className="hud-label">Status</p>
@@ -650,7 +674,9 @@ function App() {
                     </div>
                     <div className="score-kd">
                       {player.kills}/{player.deaths}
-                      <span className="score-hp">HP {player.hp}</span>
+                      <span className="score-hp">
+                        HP {player.hp}/{player.maxHp}
+                      </span>
                     </div>
                   </div>
                 ))}

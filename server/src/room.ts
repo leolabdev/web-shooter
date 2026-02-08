@@ -59,7 +59,6 @@ type PendingStrike = {
 const TICK_MS = 50;
 const SPEED = 240;
 const PLAYER_RADIUS = 18;
-const PLAYER_HP = 3;
 const ECHO_HP = 1;
 const ECHO_DELAY_MS = 900;
 const ECHO_LIFETIME_MS = 3500;
@@ -112,6 +111,7 @@ export class Room {
     readonly fillWithBots: boolean;
     readonly botCount: number;
     readonly botDifficulty: "easy" | "normal" | "hard";
+    readonly maxHp: number;
     match: MatchState;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
     private players = new Map<string, PlayerState>();
@@ -160,6 +160,7 @@ export class Room {
         fillWithBots: boolean,
         botCount: number,
         botDifficulty: "easy" | "normal" | "hard",
+        maxHp: number,
         hostId: string,
     ) {
         this.id = id;
@@ -169,6 +170,7 @@ export class Room {
         this.fillWithBots = fillWithBots;
         this.botCount = botCount;
         this.botDifficulty = botDifficulty;
+        this.maxHp = maxHp;
         this.match = {
             phase: "lobby",
             hostId,
@@ -186,7 +188,8 @@ export class Room {
             x: spawn.x,
             y: spawn.y,
             r: PLAYER_RADIUS,
-            hp: PLAYER_HP,
+            hp: this.maxHp,
+            maxHp: this.maxHp,
             alive: true,
             kills: 0,
             deaths: 0,
@@ -210,7 +213,8 @@ export class Room {
             x: spawn.x,
             y: spawn.y,
             r: PLAYER_RADIUS,
-            hp: PLAYER_HP,
+            hp: this.maxHp,
+            maxHp: this.maxHp,
             alive: true,
             kills: 0,
             deaths: 0,
@@ -486,7 +490,8 @@ export class Room {
             const spawn = this.randomSpawn();
             player.x = spawn.x;
             player.y = spawn.y;
-            player.hp = PLAYER_HP;
+            player.maxHp = this.maxHp;
+            player.hp = this.maxHp;
             player.alive = true;
         }, 1500);
     }
@@ -973,6 +978,7 @@ export class Room {
             y: spawn.y,
             r: PLAYER_RADIUS,
             hp: ECHO_HP,
+            maxHp: ECHO_HP,
             alive: true,
             kills: 0,
             deaths: 0,
@@ -1240,7 +1246,8 @@ export class Room {
             const spawn = this.randomSpawn();
             player.x = spawn.x;
             player.y = spawn.y;
-            player.hp = PLAYER_HP;
+            player.maxHp = this.maxHp;
+            player.hp = this.maxHp;
             player.alive = true;
             player.heldItem = null;
             player.shieldHp = 0;

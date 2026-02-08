@@ -42,11 +42,18 @@ const clampBotCount = (value: number | undefined, maxPlayers: number): number =>
     return Math.min(Math.max(0, Math.floor(value)), maxPlayers - 1);
 };
 
+const clampMaxHp = (value: number | undefined): number => {
+    if (!Number.isFinite(value)) return 5;
+    return Math.min(100, Math.max(1, Math.floor(value)));
+};
+
 io.on("connection", (socket) => {
     console.log("connected", socket.id);
     socket.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
 
-    socket.on("room:create", ({ name, maxPlayers, isPrivate, fillWithBots, botCount, botDifficulty }) => {
+    socket.on(
+        "room:create",
+        ({ name, maxPlayers, isPrivate, fillWithBots, botCount, botDifficulty, maxHp }) => {
         const clampedMax = clampMaxPlayers(maxPlayers);
         const room = roomManager.createRoom(
             { id: socket.id, name: normalizeName(name) },
@@ -56,6 +63,7 @@ io.on("connection", (socket) => {
                 fillWithBots: !!fillWithBots,
                 botCount: clampBotCount(botCount, clampedMax),
                 botDifficulty: normalizeBotDifficulty(botDifficulty),
+                maxHp: clampMaxHp(maxHp),
             },
         );
         socket.join(room.id);

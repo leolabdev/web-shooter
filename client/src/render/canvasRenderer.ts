@@ -47,7 +47,7 @@ const drawHpBar = (
   alpha: number,
 ) => {
   if (!player.alive) return
-  const maxHp = player.isEcho ? 1 : 3
+  const maxHp = player.maxHp || 1
   const ratio = Math.max(0, Math.min(1, player.hp / maxHp))
   const barWidth = 36
   const barHeight = 5

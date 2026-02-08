@@ -11,6 +11,7 @@ export type PlayerState = {
     y: number;
     r: number;
     hp: number;
+    maxHp: number;
     alive: boolean;
     kills: number;
     deaths: number;
@@ -79,6 +80,7 @@ export type ClientToServerEvents = {
         fillWithBots?: boolean;
         botCount?: number;
         botDifficulty?: BotDifficulty;
+        maxHp?: number;
     }) => void;
     "room:join": (payload: { roomId: string; name: string }) => void;
 
@@ -115,6 +117,7 @@ export type ServerToClientEvents = {
             fillWithBots: boolean;
             botCount: number;
             botDifficulty: BotDifficulty;
+            maxHp: number;
         }[];
     }) => void;
     "game:state": (payload: StateSnapshot) => void;

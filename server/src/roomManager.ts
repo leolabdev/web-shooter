@@ -11,6 +11,7 @@ type CreateRoomOptions = {
     fillWithBots: boolean;
     botCount: number;
     botDifficulty: "easy" | "normal" | "hard";
+    maxHp: number;
 };
 
 export class RoomManager {
@@ -32,6 +33,7 @@ export class RoomManager {
             options.fillWithBots,
             options.botCount,
             options.botDifficulty,
+            options.maxHp,
             player.id,
         );
         room.addPlayer(player);
@@ -112,6 +114,7 @@ export class RoomManager {
                 fillWithBots: room.fillWithBots,
                 botCount: room.botCount,
                 botDifficulty: room.botDifficulty,
+                maxHp: room.maxHp,
             }));
     }
 }
