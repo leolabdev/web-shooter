@@ -8,16 +8,54 @@ type Interpolator = {
 const MAX_BUFFER = 30
 const INTERP_DELAY_MS = 120
 const OFFSET_SMOOTH = 0.1
+const TELEPORT_DISTANCE = 220
+const TELEPORT_SNAP_MS = 200
+const RESPAWN_SNAP_MS = 250
+const META_GC_MS = 5000
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+const distance = (ax: number, ay: number, bx: number, by: number) =>
+  Math.hypot(ax - bx, ay - by)
 
 export const createSnapshotInterpolator = (): Interpolator => {
   let buffer: StateSnapshot[] = []
   let offsetMs: number | null = null
+  const meta = new Map<
+    string,
+    { lastAlive: boolean; lastPos: { x: number; y: number }; noInterpUntilMs: number; lastSeen: number }
+  >()
 
   const pushSnapshot = (snapshot: StateSnapshot, nowClientMs = performance.now()) => {
     const newOffset = nowClientMs - snapshot.t
     offsetMs = offsetMs === null ? newOffset : lerp(offsetMs, newOffset, OFFSET_SMOOTH)
+
+    snapshot.players.forEach((player) => {
+      const prev = meta.get(player.id)
+      const next = {
+        lastAlive: player.alive,
+        lastPos: { x: player.x, y: player.y },
+        noInterpUntilMs: prev?.noInterpUntilMs ?? 0,
+        lastSeen: snapshot.t,
+      }
+
+      if (prev) {
+        if (!prev.lastAlive && player.alive) {
+          next.noInterpUntilMs = snapshot.t + RESPAWN_SNAP_MS
+        } else if (
+          distance(prev.lastPos.x, prev.lastPos.y, player.x, player.y) > TELEPORT_DISTANCE
+        ) {
+          next.noInterpUntilMs = snapshot.t + TELEPORT_SNAP_MS
+        }
+      }
+
+      meta.set(player.id, next)
+    })
+
+    for (const [id, entry] of meta.entries()) {
+      if (snapshot.t - entry.lastSeen > META_GC_MS) {
+        meta.delete(id)
+      }
+    }
 
     const last = buffer[buffer.length - 1]
     if (!last || snapshot.t >= last.t) {
@@ -68,8 +106,13 @@ export const createSnapshotInterpolator = (): Interpolator => {
       if (!base) {
         throw new Error('Missing player base snapshot')
       }
-      const x = pa && pb ? lerp(pa.x, pb.x, alpha) : base.x
-      const y = pa && pb ? lerp(pa.y, pb.y, alpha) : base.y
+      const metaEntry = meta.get(id)
+      const snapToLatest =
+        (metaEntry?.noInterpUntilMs && renderTimeServer <= metaEntry.noInterpUntilMs) ||
+        (pa && pb && !pa.alive && pb.alive) ||
+        (pa && pb && distance(pa.x, pa.y, pb.x, pb.y) > TELEPORT_DISTANCE)
+      const x = pa && pb && !snapToLatest ? lerp(pa.x, pb.x, alpha) : base.x
+      const y = pa && pb && !snapToLatest ? lerp(pa.y, pb.y, alpha) : base.y
       return {
         ...base,
         x,
