@@ -9,6 +9,8 @@ type CreateRoomOptions = {
     maxPlayers: number;
     isPrivate: boolean;
     fillWithBots: boolean;
+    botCount: number;
+    botDifficulty: "easy" | "normal" | "hard";
 };
 
 export class RoomManager {
@@ -28,6 +30,8 @@ export class RoomManager {
             options.maxPlayers,
             options.isPrivate,
             options.fillWithBots,
+            options.botCount,
+            options.botDifficulty,
             player.id,
         );
         room.addPlayer(player);
@@ -95,6 +99,8 @@ export class RoomManager {
         maxPlayers: number;
         isPrivate: boolean;
         fillWithBots: boolean;
+        botCount: number;
+        botDifficulty: "easy" | "normal" | "hard";
     }[] {
         return Array.from(this.rooms.values())
             .filter((room) => !room.isPrivate)
@@ -104,6 +110,8 @@ export class RoomManager {
                 maxPlayers: room.maxPlayers,
                 isPrivate: room.isPrivate,
                 fillWithBots: room.fillWithBots,
+                botCount: room.botCount,
+                botDifficulty: room.botDifficulty,
             }));
     }
 }

@@ -30,17 +30,32 @@ const clampMaxPlayers = (value: number | undefined): number => {
     return Math.min(12, Math.max(2, Math.floor(value)));
 };
 
+const normalizeBotDifficulty = (
+    value: string | undefined,
+): "easy" | "normal" | "hard" => {
+    if (value === "easy" || value === "hard") return value;
+    return "normal";
+};
+
+const clampBotCount = (value: number | undefined, maxPlayers: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(Math.max(0, Math.floor(value)), maxPlayers - 1);
+};
+
 io.on("connection", (socket) => {
     console.log("connected", socket.id);
     socket.emit("rooms:list", { rooms: roomManager.getRoomsSummary() });
 
-    socket.on("room:create", ({ name, maxPlayers, isPrivate, fillWithBots }) => {
+    socket.on("room:create", ({ name, maxPlayers, isPrivate, fillWithBots, botCount, botDifficulty }) => {
+        const clampedMax = clampMaxPlayers(maxPlayers);
         const room = roomManager.createRoom(
             { id: socket.id, name: normalizeName(name) },
             {
-                maxPlayers: clampMaxPlayers(maxPlayers),
+                maxPlayers: clampedMax,
                 isPrivate: !!isPrivate,
                 fillWithBots: !!fillWithBots,
+                botCount: clampBotCount(botCount, clampedMax),
+                botDifficulty: normalizeBotDifficulty(botDifficulty),
             },
         );
         socket.join(room.id);

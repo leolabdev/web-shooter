@@ -39,6 +39,8 @@ function App() {
       maxPlayers: number
       isPrivate: boolean
       fillWithBots: boolean
+      botCount: number
+      botDifficulty: 'easy' | 'normal' | 'hard'
     }[]
   >([])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -50,6 +52,8 @@ function App() {
   const [maxPlayers, setMaxPlayers] = useState(6)
   const [isPrivate, setIsPrivate] = useState(false)
   const [fillWithBots, setFillWithBots] = useState(false)
+  const [botCount, setBotCount] = useState(0)
+  const [botDifficulty, setBotDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
   const [connection, setConnection] = useState<ReturnType<typeof connectSocket> | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fxRef = useRef<Map<string, FxState>>(new Map())
@@ -220,6 +224,7 @@ function App() {
 
   const canCreate = name.trim().length > 0
   const canJoin = canCreate && roomId.trim().length > 0
+  const maxBotCount = Math.max(0, maxPlayers - 1)
 
   const localPlayer = snapshot?.players.find((player) => player.id === roomInfo?.playerId)
   const realPlayers = snapshot?.players.filter((player) => !player.isEcho) ?? []
@@ -282,6 +287,12 @@ function App() {
     if (!match) return
     setDurationSec(match.durationSec)
   }, [match?.durationSec])
+
+  useEffect(() => {
+    if (botCount > maxBotCount) {
+      setBotCount(maxBotCount)
+    }
+  }, [botCount, maxBotCount])
 
   useEffect(() => {
     if (!toast) return
@@ -424,6 +435,32 @@ function App() {
               />
               <span>Fill with bots</span>
             </label>
+            <label className="field">
+              <span>Bot count</span>
+              <select
+                value={botCount}
+                onChange={(event) => setBotCount(Number(event.target.value))}
+                disabled={!fillWithBots}
+              >
+                {Array.from({ length: maxBotCount + 1 }, (_, index) => index).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Bot difficulty</span>
+              <select
+                value={botDifficulty}
+                onChange={(event) => setBotDifficulty(event.target.value as typeof botDifficulty)}
+                disabled={!fillWithBots}
+              >
+                <option value="easy">Easy</option>
+                <option value="normal">Normal</option>
+                <option value="hard">Hard</option>
+              </select>
+            </label>
           </div>
 
           <div className="lobby-actions">
@@ -436,6 +473,8 @@ function App() {
                   maxPlayers,
                   isPrivate,
                   fillWithBots,
+                  botCount: fillWithBots ? botCount : 0,
+                  botDifficulty,
                 })
               }
             >
@@ -467,7 +506,9 @@ function App() {
                       <p className="room-id">{room.roomId}</p>
                       <p className="room-meta">
                         {room.playerCount}/{room.maxPlayers} pilots
-                        {room.fillWithBots ? ' · Bots' : ''}
+                        {room.fillWithBots
+                          ? ` · Bots: ${room.botCount} (${room.botDifficulty})`
+                          : ''}
                       </p>
                     </div>
                     <button

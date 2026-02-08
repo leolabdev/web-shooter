@@ -57,6 +57,8 @@ export type MatchState = {
     durationSec: number;
 };
 
+export type BotDifficulty = "easy" | "normal" | "hard";
+
 export type StateSnapshot = {
     t: number;
     roomId: string;
@@ -75,6 +77,8 @@ export type ClientToServerEvents = {
         maxPlayers: number;
         isPrivate?: boolean;
         fillWithBots?: boolean;
+        botCount?: number;
+        botDifficulty?: BotDifficulty;
     }) => void;
     "room:join": (payload: { roomId: string; name: string }) => void;
 
@@ -109,6 +113,8 @@ export type ServerToClientEvents = {
             maxPlayers: number;
             isPrivate: boolean;
             fillWithBots: boolean;
+            botCount: number;
+            botDifficulty: BotDifficulty;
         }[];
     }) => void;
     "game:state": (payload: StateSnapshot) => void;

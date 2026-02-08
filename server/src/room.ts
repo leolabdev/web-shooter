@@ -110,6 +110,8 @@ export class Room {
     readonly maxPlayers: number;
     readonly isPrivate: boolean;
     readonly fillWithBots: boolean;
+    readonly botCount: number;
+    readonly botDifficulty: "easy" | "normal" | "hard";
     match: MatchState;
     private io: Server<ClientToServerEvents, ServerToClientEvents>;
     private players = new Map<string, PlayerState>();
@@ -122,8 +124,16 @@ export class Room {
     private shieldUntilMs = new Map<string, number>();
     private novaHitCooldown = new Map<string, number>();
     private botIds: string[] = [];
-    private botStrafeDir = new Map<string, number>();
-    private botStrafeUntilMs = new Map<string, number>();
+    private botAi = new Map<
+        string,
+        {
+            nextThinkAtMs: number;
+            nextStrafeFlipAtMs: number;
+            strafeDir: number;
+            targetId?: string;
+            aim: { x: number; y: number };
+        }
+    >();
     private echoes = new Map<string, EchoMeta>();
     private pickups = new Map<string, PickupState>();
     private zones = new Map<string, ZoneState>();
@@ -148,6 +158,8 @@ export class Room {
         maxPlayers: number,
         isPrivate: boolean,
         fillWithBots: boolean,
+        botCount: number,
+        botDifficulty: "easy" | "normal" | "hard",
         hostId: string,
     ) {
         this.id = id;
@@ -155,6 +167,8 @@ export class Room {
         this.maxPlayers = maxPlayers;
         this.isPrivate = isPrivate;
         this.fillWithBots = fillWithBots;
+        this.botCount = botCount;
+        this.botDifficulty = botDifficulty;
         this.match = {
             phase: "lobby",
             hostId,
@@ -205,6 +219,12 @@ export class Room {
             shieldHp: 0,
         });
         this.botIds.push(botId);
+        this.botAi.set(botId, {
+            nextThinkAtMs: 0,
+            nextStrafeFlipAtMs: 0,
+            strafeDir: 1,
+            aim: { x: spawn.x, y: spawn.y },
+        });
     }
 
     removePlayer(playerId: string): void {
@@ -215,6 +235,7 @@ export class Room {
         this.lastUseItemSeq.delete(playerId);
         this.dashUntilMs.delete(playerId);
         this.shieldUntilMs.delete(playerId);
+        this.botAi.delete(playerId);
         this.pendingStrikes.delete(playerId);
         this.strikes = this.strikes.filter((strike) => strike.byId !== playerId);
         if (this.match.hostId === playerId) {
@@ -287,7 +308,10 @@ export class Room {
             this.clearBots();
             return;
         }
-        const desiredBots = Math.max(0, this.maxPlayers - this.getHumanCount());
+        const desiredBots = Math.min(
+            this.botCount,
+            Math.max(0, this.maxPlayers - this.getHumanCount()),
+        );
         const delta = desiredBots - this.getBotCount();
         if (delta > 0) {
             for (let i = 0; i < delta; i += 1) {
@@ -309,8 +333,7 @@ export class Room {
             this.lastUseItemSeq.delete(botId);
             this.dashUntilMs.delete(botId);
             this.shieldUntilMs.delete(botId);
-            this.botStrafeDir.delete(botId);
-            this.botStrafeUntilMs.delete(botId);
+            this.botAi.delete(botId);
         }
     }
 
@@ -513,15 +536,17 @@ export class Room {
     }
 
     private updateBots(nowMs: number, dtSeconds: number, allowShoot: boolean): void {
+        if (!allowShoot) return;
+        const config = this.getBotConfig();
         for (const botId of this.botIds) {
             const bot = this.players.get(botId);
             if (!bot || !bot.alive) continue;
             const target = this.findBotTarget(botId);
             if (!target) continue;
-            const input = this.buildBotInput(botId, bot, target, nowMs);
-            const moveMult = this.getMoveMultiplier(botId, bot, nowMs);
+            const input = this.buildBotInput(botId, bot, target, nowMs, config);
+            const moveMult = this.getMoveMultiplier(botId, bot, nowMs) * config.speedMult;
             this.applyMovement(bot, input, dtSeconds, moveMult);
-            if (allowShoot && input.shoot) {
+            if (input.shoot) {
                 this.tryShoot(bot, input, nowMs, bot.id);
             }
         }
@@ -558,6 +583,7 @@ export class Room {
         bot: PlayerState,
         target: PlayerState,
         nowMs: number,
+        config: { aimJitter: number; reactionMs: number; shootRange: number; speedMult: number },
     ): PlayerInput {
         const dx = target.x - bot.x;
         const dy = target.y - bot.y;
@@ -571,16 +597,32 @@ export class Room {
             moveX = -dx / dist;
             moveY = -dy / dist;
         } else {
-            const until = this.botStrafeUntilMs.get(botId) ?? 0;
-            if (nowMs > until) {
-                const dir = this.botStrafeDir.get(botId) ?? 1;
-                this.botStrafeDir.set(botId, dir * -1);
-                this.botStrafeUntilMs.set(botId, nowMs + 700);
+            const ai = this.botAi.get(botId);
+            if (ai && nowMs > ai.nextStrafeFlipAtMs) {
+                ai.strafeDir *= -1;
+                ai.nextStrafeFlipAtMs = nowMs + 700;
             }
-            const dir = this.botStrafeDir.get(botId) ?? 1;
+            const dir = this.botAi.get(botId)?.strafeDir ?? 1;
             moveX = (-dy / dist) * dir;
             moveY = (dx / dist) * dir;
         }
+
+        const ai = this.botAi.get(botId) ?? {
+            nextThinkAtMs: 0,
+            nextStrafeFlipAtMs: 0,
+            strafeDir: 1,
+            aim: { x: target.x, y: target.y },
+        };
+
+        if (nowMs >= ai.nextThinkAtMs || ai.targetId !== target.id) {
+            ai.targetId = target.id;
+            ai.nextThinkAtMs = nowMs + config.reactionMs;
+            ai.aim = {
+                x: target.x + (Math.random() - 0.5) * config.aimJitter * 2,
+                y: target.y + (Math.random() - 0.5) * config.aimJitter * 2,
+            };
+        }
+        this.botAi.set(botId, ai);
 
         const keys = {
             up: moveY < -0.2,
@@ -588,10 +630,8 @@ export class Room {
             left: moveX < -0.2,
             right: moveX > 0.2,
         };
-        const jitterX = (Math.random() - 0.5) * 36;
-        const jitterY = (Math.random() - 0.5) * 36;
-        const aim = { x: target.x + jitterX, y: target.y + jitterY };
-        const shoot = dist < 650;
+        const aim = ai.aim;
+        const shoot = dist < config.shootRange && target.alive;
 
         return {
             seq: nowMs,
@@ -601,6 +641,21 @@ export class Room {
             shoot,
             useItem: false,
         };
+    }
+
+    private getBotConfig(): {
+        aimJitter: number;
+        reactionMs: number;
+        shootRange: number;
+        speedMult: number;
+    } {
+        if (this.botDifficulty === "easy") {
+            return { aimJitter: 60, reactionMs: 300, shootRange: 450, speedMult: 0.75 };
+        }
+        if (this.botDifficulty === "hard") {
+            return { aimJitter: 10, reactionMs: 100, shootRange: 750, speedMult: 1.05 };
+        }
+        return { aimJitter: 28, reactionMs: 180, shootRange: 650, speedMult: 0.95 };
     }
 
     private canUseItem(playerId: string, seq: number): boolean {
@@ -1173,6 +1228,7 @@ export class Room {
         this.strikes = [];
         this.pendingStrikes.clear();
         this.pendingEvents = [];
+        this.botAi.clear();
         for (const [echoId, meta] of this.echoes.entries()) {
             this.echoes.delete(echoId);
             this.players.delete(echoId);
