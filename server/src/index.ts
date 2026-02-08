@@ -133,6 +133,12 @@ io.on("connection", (socket) => {
         room.confirmStrike(socket.id, x, y, Date.now());
     });
 
+    socket.on("portal:placeB", ({ x, y }) => {
+        const room = roomManager.getRoomByPlayer(socket.id);
+        if (!room) return;
+        room.confirmPortalB(socket.id, x, y, Date.now());
+    });
+
     socket.on("chat:send", ({ text }) => {
         const room = roomManager.getRoomByPlayer(socket.id);
         if (!room) return;

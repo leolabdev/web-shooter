@@ -35,6 +35,8 @@ export type BulletState = {
     vy: number;
     ttlMs: number;
     burstId?: string;
+    portalJumpsLeft?: number;
+    bulletPortalCooldownUntilMs?: number;
 };
 
 export type GameEvent =
@@ -69,6 +71,7 @@ export type StateSnapshot = {
     events: GameEvent[];
     pickups: PickupState[];
     zones: ZoneState[];
+    portals: PortalState[];
     match: MatchState;
 };
 
@@ -95,6 +98,7 @@ export type ClientToServerEvents = {
     }) => void;
 
     "strike:confirm": (payload: { x: number; y: number }) => void;
+    "portal:placeB": (payload: { x: number; y: number }) => void;
 
     "match:configure": (payload: { durationSec: number }) => void;
     "match:start": () => void;
@@ -137,7 +141,17 @@ export type AbilityType =
     | "shield"
     | "rift_sniper"
     | "pulse_nova"
-    | "orbital_strike";
+    | "orbital_strike"
+    | "linked_portals";
+
+export type PortalState = {
+    id: string;
+    ownerId: string;
+    a: { x: number; y: number; r: number };
+    b?: { x: number; y: number; r: number };
+    createdAtMs: number;
+    expiresAtMs?: number;
+};
 
 export type PickupState = {
     id: string;

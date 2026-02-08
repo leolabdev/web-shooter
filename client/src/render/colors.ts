@@ -7,6 +7,9 @@ const hashString = (value: string) => {
 }
 
 export const colorFromId = (id: string) => {
-  const hue = hashString(id) % 360
-  return `hsl(${hue} 80% 55%)`
+  const hash = hashString(id)
+  const hue = hash % 360
+  const saturation = 68 + ((hash >> 8) % 22)
+  const lightness = 46 + ((hash >> 16) % 12)
+  return `hsl(${hue} ${saturation}% ${lightness}%)`
 }

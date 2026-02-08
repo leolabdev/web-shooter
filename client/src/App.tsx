@@ -18,6 +18,7 @@ import {
   renderSnapshot,
   type BeamFx,
   type NovaFx,
+  type PortalPreview,
   type StrikeBoomFx,
   type StrikeMarkFx,
   type StrikePreview,
@@ -47,6 +48,7 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const [chatText, setChatText] = useState('')
   const [strikeTargeting, setStrikeTargeting] = useState(false)
+  const [portalPlacing, setPortalPlacing] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(300)
   const [maxPlayers, setMaxPlayers] = useState(6)
@@ -70,6 +72,8 @@ function App() {
   const strikeTargetingRef = useRef(false)
   const strikeAimRef = useRef({ x: ARENA.w / 2, y: ARENA.h / 2 })
   const strikeTimeoutRef = useRef<number | null>(null)
+  const portalPlacingRef = useRef(false)
+  const portalTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     const conn = connectSocket()
@@ -168,7 +172,7 @@ function App() {
     subs.add(
       createInputPackets(canvas, {
         isChatActive: () => chatOpenRef.current,
-        isShootEnabled: () => !strikeTargetingRef.current,
+        isShootEnabled: () => !strikeTargetingRef.current && !portalPlacingRef.current,
         resetKeys$: resetKeysRef.current,
       }).subscribe((packet) => connection.send.input(packet)),
     )
@@ -192,6 +196,13 @@ function App() {
                 r: 120,
               }
             : undefined
+          const portalPreview: PortalPreview | undefined = portalPlacingRef.current
+            ? {
+                x: strikeAimRef.current.x,
+                y: strikeAimRef.current.y,
+                r: 22,
+              }
+            : undefined
           if (renderState) {
             renderSnapshot(
               ctx,
@@ -203,6 +214,7 @@ function App() {
               strikeMarksRef.current,
               strikeBoomsRef.current,
               strikePreview,
+              portalPreview,
             )
           } else {
             renderSnapshot(
@@ -215,6 +227,7 @@ function App() {
               strikeMarksRef.current,
               strikeBoomsRef.current,
               strikePreview,
+              portalPreview,
             )
           }
         }),
@@ -269,9 +282,15 @@ function App() {
     if (chatOpen) {
       strikeTargetingRef.current = false
       setStrikeTargeting(false)
+      portalPlacingRef.current = false
+      setPortalPlacing(false)
       if (strikeTimeoutRef.current) {
         window.clearTimeout(strikeTimeoutRef.current)
         strikeTimeoutRef.current = null
+      }
+      if (portalTimeoutRef.current) {
+        window.clearTimeout(portalTimeoutRef.current)
+        portalTimeoutRef.current = null
       }
     }
   }, [chatOpen])
@@ -336,6 +355,23 @@ function App() {
           setStrikeTargeting(false)
           strikeTimeoutRef.current = null
         }, 5000)
+      } else if (
+        event.code === 'KeyQ' &&
+        heldItem === 'linked_portals' &&
+        !chatOpenRef.current &&
+        match?.phase === 'playing'
+      ) {
+        event.preventDefault()
+        portalPlacingRef.current = true
+        setPortalPlacing(true)
+        if (portalTimeoutRef.current) {
+          window.clearTimeout(portalTimeoutRef.current)
+        }
+        portalTimeoutRef.current = window.setTimeout(() => {
+          portalPlacingRef.current = false
+          setPortalPlacing(false)
+          portalTimeoutRef.current = null
+        }, 5000)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -371,14 +407,25 @@ function App() {
     }
     const onClick = (event: MouseEvent) => {
       if (event.button !== 0) return
-      if (!strikeTargetingRef.current) return
+      if (strikeTargetingRef.current) {
+        event.preventDefault()
+        connection?.send.strikeConfirm(strikeAimRef.current)
+        strikeTargetingRef.current = false
+        setStrikeTargeting(false)
+        if (strikeTimeoutRef.current) {
+          window.clearTimeout(strikeTimeoutRef.current)
+          strikeTimeoutRef.current = null
+        }
+        return
+      }
+      if (!portalPlacingRef.current) return
       event.preventDefault()
-      connection?.send.strikeConfirm(strikeAimRef.current)
-      strikeTargetingRef.current = false
-      setStrikeTargeting(false)
-      if (strikeTimeoutRef.current) {
-        window.clearTimeout(strikeTimeoutRef.current)
-        strikeTimeoutRef.current = null
+      connection?.send.portalPlaceB(strikeAimRef.current)
+      portalPlacingRef.current = false
+      setPortalPlacing(false)
+      if (portalTimeoutRef.current) {
+        window.clearTimeout(portalTimeoutRef.current)
+        portalTimeoutRef.current = null
       }
     }
     canvas.addEventListener('mousemove', onMove)
@@ -607,6 +654,9 @@ function App() {
             </div>
             {strikeTargeting ? (
               <div className="strike-hint">Click to designate target</div>
+            ) : null}
+            {portalPlacing ? (
+              <div className="strike-hint">Click to place portal B</div>
             ) : null}
           </div>
 

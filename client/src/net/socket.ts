@@ -80,6 +80,8 @@ export const connectSocket = () => {
       socket.emit('chat:send', payload),
     strikeConfirm: (payload: Parameters<ClientToServerEvents['strike:confirm']>[0]) =>
       socket.emit('strike:confirm', payload),
+    portalPlaceB: (payload: Parameters<ClientToServerEvents['portal:placeB']>[0]) =>
+      socket.emit('portal:placeB', payload),
     configureMatch: (payload: Parameters<ClientToServerEvents['match:configure']>[0]) =>
       socket.emit('match:configure', payload),
     startMatch: () => socket.emit('match:start'),

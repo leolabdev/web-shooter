@@ -8,6 +8,7 @@ import type {
     ChatMessage,
     GameEvent,
     MatchState,
+    PortalState,
     PickupState,
     StateSnapshot,
     ZoneState,
@@ -56,6 +57,11 @@ type PendingStrike = {
     expiresAtMs: number;
 };
 
+type PendingPortal = {
+    portal: PortalState;
+    expiresAtMs: number;
+};
+
 const TICK_MS = 50;
 const SPEED = 240;
 const PLAYER_RADIUS = 18;
@@ -78,6 +84,12 @@ const STRIKE_MARK_MS = 1000;
 const STRIKE_RADIUS = 120;
 const STRIKE_DAMAGE = 2;
 const STRIKE_TARGET_WINDOW_MS = 5000;
+const PORTAL_RADIUS = 22;
+const PORTAL_DURATION_MS = 5000;
+const PORTAL_PENDING_MS = 5000;
+const PORTAL_ENTITY_COOLDOWN_MS = 250;
+const PORTAL_BULLET_COOLDOWN_MS = 60;
+const PORTAL_BULLET_JUMPS = 2;
 const BULLET_SPEED = 520;
 const BULLET_TTL_MS = 1200;
 const FIRE_COOLDOWN_MS = 1000 / 6;
@@ -102,6 +114,7 @@ const ABILITIES: AbilityType[] = [
     "rift_sniper",
     "pulse_nova",
     "orbital_strike",
+    "linked_portals",
 ];
 
 export class Room {
@@ -140,6 +153,9 @@ export class Room {
     private strikes: Strike[] = [];
     private pendingStrikes = new Map<string, PendingStrike>();
     private pendingEvents: GameEvent[] = [];
+    private portals: PortalState[] = [];
+    private pendingPortals = new Map<string, PendingPortal>();
+    private portalCooldownUntilMs = new Map<string, number>();
     private chatMessages: ChatMessage[] = [];
     private tickTimer: NodeJS.Timeout | null = null;
     private lastTickMs = Date.now();
@@ -151,6 +167,7 @@ export class Room {
     private strikeSeq = 0;
     private botSeq = 0;
     private lastBotCheckMs = 0;
+    private portalSeq = 0;
 
     constructor(
         id: string,
@@ -243,6 +260,9 @@ export class Room {
         this.botAi.delete(playerId);
         this.pendingStrikes.delete(playerId);
         this.strikes = this.strikes.filter((strike) => strike.byId !== playerId);
+        this.pendingPortals.delete(playerId);
+        this.portals = this.portals.filter((portal) => portal.ownerId !== playerId);
+        this.portalCooldownUntilMs.delete(playerId);
         if (this.match.hostId === playerId) {
             this.assignNewHost();
         }
@@ -389,11 +409,15 @@ export class Room {
 
         this.updateBots(now, dtSeconds, isPlaying);
         this.updatePendingStrikes(now);
+        this.updatePendingPortals(now);
         this.updateShields(now);
 
         this.collectPickups();
         this.updateZones(now);
         this.updateEchoes(now, dtSeconds, isPlaying);
+        this.updatePortals(now);
+        this.updatePortalEntities(now);
+        this.updatePortalBullets(now);
         this.updateStrikes(now, events);
         stepBullets({
             bullets: this.bullets,
@@ -430,6 +454,7 @@ export class Room {
         const bullets = Array.from(this.bullets.values());
         const pickups = Array.from(this.pickups.values());
         const zones = Array.from(this.zones.values());
+        const portals = this.portals;
         for (const playerId of this.players.keys()) {
             const snapshot: StateSnapshot = {
                 t: timestamp,
@@ -440,6 +465,7 @@ export class Room {
                 events,
                 pickups,
                 zones,
+                portals,
                 match: this.match,
             };
             this.io.to(playerId).emit("game:state", snapshot);
@@ -477,6 +503,8 @@ export class Room {
             vx: nx * BULLET_SPEED,
             vy: ny * BULLET_SPEED,
             ttlMs: BULLET_TTL_MS,
+            portalJumpsLeft: PORTAL_BULLET_JUMPS,
+            bulletPortalCooldownUntilMs: 0,
         };
         this.bullets.set(bullet.id, bullet);
         this.lastShotAtMs.set(player.id, nowMs);
@@ -697,6 +725,9 @@ export class Room {
         } else if (player.heldItem === "orbital_strike") {
             this.beginStrikeTargeting(player, nowMs);
             return;
+        } else if (player.heldItem === "linked_portals") {
+            this.beginPortalPlacement(player, nowMs);
+            return;
         }
         player.heldItem = null;
     }
@@ -710,6 +741,47 @@ export class Room {
             expiresAtMs: nowMs + STRIKE_TARGET_WINDOW_MS,
         });
         this.io.to(player.id).emit("match:toast", { message: "Select target (LMB)" });
+    }
+
+    private beginPortalPlacement(player: PlayerState, nowMs: number): void {
+        if (player.isEcho) return;
+        const existing = this.portals.find(
+            (portal) => portal.ownerId === player.id && portal.expiresAtMs && nowMs < portal.expiresAtMs,
+        );
+        if (existing) return;
+        if (this.pendingPortals.has(player.id)) return;
+        const portal: PortalState = {
+            id: `${this.id}-p-${this.portalSeq++}`,
+            ownerId: player.id,
+            a: { x: player.x, y: player.y, r: PORTAL_RADIUS },
+            createdAtMs: nowMs,
+        };
+        this.pendingPortals.set(player.id, {
+            portal,
+            expiresAtMs: nowMs + PORTAL_PENDING_MS,
+        });
+        this.io.to(player.id).emit("match:toast", { message: "Place portal B (LMB)" });
+    }
+
+    confirmPortalB(playerId: string, x: number, y: number, nowMs: number): void {
+        if (this.match.phase !== "playing") return;
+        const player = this.players.get(playerId);
+        if (!player || player.isEcho || !player.alive) return;
+        const pending = this.pendingPortals.get(playerId);
+        if (!pending || nowMs > pending.expiresAtMs) {
+            this.pendingPortals.delete(playerId);
+            return;
+        }
+        if (player.heldItem !== "linked_portals") return;
+        const target = {
+            x: clamp(x, 0, ARENA.w),
+            y: clamp(y, 0, ARENA.h),
+        };
+        pending.portal.b = { x: target.x, y: target.y, r: PORTAL_RADIUS };
+        pending.portal.expiresAtMs = nowMs + PORTAL_DURATION_MS;
+        this.portals.push(pending.portal);
+        this.pendingPortals.delete(playerId);
+        player.heldItem = null;
     }
 
     private activateShield(player: PlayerState, nowMs: number): void {
@@ -776,6 +848,8 @@ export class Room {
                 vy: ny * NOVA_BULLET_SPEED,
                 ttlMs: NOVA_BULLET_TTL_MS,
                 burstId,
+                portalJumpsLeft: PORTAL_BULLET_JUMPS,
+                bulletPortalCooldownUntilMs: 0,
             };
             this.bullets.set(bullet.id, bullet);
         }
@@ -810,6 +884,14 @@ export class Room {
         }
     }
 
+    private updatePendingPortals(nowMs: number): void {
+        for (const [playerId, pending] of this.pendingPortals.entries()) {
+            if (nowMs > pending.expiresAtMs) {
+                this.pendingPortals.delete(playerId);
+            }
+        }
+    }
+
     private updateShields(nowMs: number): void {
         for (const player of this.players.values()) {
             if (player.isEcho) {
@@ -833,6 +915,72 @@ export class Room {
             }
         }
         this.strikes = pending;
+    }
+
+    private updatePortals(nowMs: number): void {
+        this.portals = this.portals.filter(
+            (portal) => !portal.expiresAtMs || nowMs < portal.expiresAtMs,
+        );
+    }
+
+    private updatePortalEntities(nowMs: number): void {
+        for (const portal of this.portals) {
+            if (!portal.b) continue;
+            const a = portal.a;
+            const b = portal.b;
+            for (const entity of this.players.values()) {
+                if (!entity.alive) continue;
+                const cooldown = this.portalCooldownUntilMs.get(entity.id) ?? 0;
+                if (nowMs < cooldown) continue;
+                if (isInsideCircle(entity.x, entity.y, a.x, a.y, a.r + entity.r)) {
+                    entity.x = b.x;
+                    entity.y = b.y;
+                    this.portalCooldownUntilMs.set(
+                        entity.id,
+                        nowMs + PORTAL_ENTITY_COOLDOWN_MS,
+                    );
+                } else if (isInsideCircle(entity.x, entity.y, b.x, b.y, b.r + entity.r)) {
+                    entity.x = a.x;
+                    entity.y = a.y;
+                    this.portalCooldownUntilMs.set(
+                        entity.id,
+                        nowMs + PORTAL_ENTITY_COOLDOWN_MS,
+                    );
+                }
+            }
+        }
+    }
+
+    private updatePortalBullets(nowMs: number): void {
+        for (const portal of this.portals) {
+            if (!portal.b) continue;
+            const a = portal.a;
+            const b = portal.b;
+            for (const bullet of this.bullets.values()) {
+                const jumpsLeft = bullet.portalJumpsLeft ?? PORTAL_BULLET_JUMPS;
+                if (jumpsLeft <= 0) continue;
+                const cooldown = bullet.bulletPortalCooldownUntilMs ?? 0;
+                if (nowMs < cooldown) continue;
+                if (isInsideCircle(bullet.x, bullet.y, a.x, a.y, a.r)) {
+                    this.teleportBullet(bullet, b);
+                    bullet.portalJumpsLeft = jumpsLeft - 1;
+                    bullet.bulletPortalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                } else if (isInsideCircle(bullet.x, bullet.y, b.x, b.y, b.r)) {
+                    this.teleportBullet(bullet, a);
+                    bullet.portalJumpsLeft = jumpsLeft - 1;
+                    bullet.bulletPortalCooldownUntilMs = nowMs + PORTAL_BULLET_COOLDOWN_MS;
+                }
+            }
+        }
+    }
+
+    private teleportBullet(bullet: BulletState, portal: { x: number; y: number; r: number }): void {
+        const len = Math.hypot(bullet.vx, bullet.vy) || 1;
+        const nx = bullet.vx / len;
+        const ny = bullet.vy / len;
+        const offset = portal.r + 6;
+        bullet.x = portal.x + nx * offset;
+        bullet.y = portal.y + ny * offset;
     }
 
     private getMoveMultiplier(
@@ -1235,6 +1383,9 @@ export class Room {
         this.strikes = [];
         this.pendingStrikes.clear();
         this.pendingEvents = [];
+        this.portals = [];
+        this.pendingPortals.clear();
+        this.portalCooldownUntilMs.clear();
         this.botAi.clear();
         for (const [echoId, meta] of this.echoes.entries()) {
             this.echoes.delete(echoId);
@@ -1267,4 +1418,16 @@ const distanceSq = (ax: number, ay: number, bx: number, by: number): number => {
     const dx = ax - bx;
     const dy = ay - by;
     return dx * dx + dy * dy;
+};
+
+const isInsideCircle = (
+    x: number,
+    y: number,
+    cx: number,
+    cy: number,
+    r: number,
+): boolean => {
+    const dx = x - cx;
+    const dy = y - cy;
+    return dx * dx + dy * dy <= r * r;
 };

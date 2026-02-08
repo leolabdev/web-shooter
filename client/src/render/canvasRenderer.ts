@@ -16,8 +16,10 @@ const COLORS = {
   pickupShield: '#7cffb3',
   pickupRift: '#ff7ad9',
   pickupStrike: '#ff9b6b',
+  pickupPortals: '#7aa5ff',
   shieldRing: 'rgba(124, 255, 179, 0.7)',
   beam: 'rgba(255, 225, 140, 0.85)',
+  portal: 'rgba(122, 165, 255, 0.85)',
 }
 
 const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
@@ -27,6 +29,7 @@ const pickupLabel = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'rift_sniper') return 'R'
   if (type === 'pulse_nova') return 'N'
   if (type === 'orbital_strike') return 'O'
+  if (type === 'linked_portals') return 'P'
   return 'D'
 }
 
@@ -37,6 +40,7 @@ const pickupColor = (type: StateSnapshot['pickups'][number]['type']) => {
   if (type === 'rift_sniper') return COLORS.pickupRift
   if (type === 'pulse_nova') return COLORS.pickupNova
   if (type === 'orbital_strike') return COLORS.pickupStrike
+  if (type === 'linked_portals') return COLORS.pickupPortals
   return COLORS.pickupDash
 }
 
@@ -185,6 +189,12 @@ export type StrikePreview = {
   r: number
 }
 
+export type PortalPreview = {
+  x: number
+  y: number
+  r: number
+}
+
 export const renderSnapshot = (
   ctx: CanvasRenderingContext2D,
   snapshot: StateSnapshot,
@@ -195,6 +205,7 @@ export const renderSnapshot = (
   strikeMarks: StrikeMarkFx[] = [],
   strikeBooms: StrikeBoomFx[] = [],
   strikePreview?: StrikePreview,
+  portalPreview?: PortalPreview,
 ) => {
   ctx.clearRect(0, 0, ARENA.w, ARENA.h)
   ctx.fillStyle = COLORS.background
@@ -214,6 +225,29 @@ export const renderSnapshot = (
     ctx.arc(zone.x, zone.y, zone.r, 0, Math.PI * 2)
     ctx.fill()
     ctx.stroke()
+    ctx.restore()
+  })
+
+  snapshot.portals.forEach((portal) => {
+    ctx.save()
+    ctx.strokeStyle = COLORS.portal
+    ctx.fillStyle = 'rgba(122, 165, 255, 0.08)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(portal.a.x, portal.a.y, portal.a.r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    if (portal.b) {
+      ctx.beginPath()
+      ctx.arc(portal.b.x, portal.b.y, portal.b.r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.globalAlpha = 0.35
+      ctx.beginPath()
+      ctx.moveTo(portal.a.x, portal.a.y)
+      ctx.lineTo(portal.b.x, portal.b.y)
+      ctx.stroke()
+    }
     ctx.restore()
   })
 
@@ -320,6 +354,24 @@ export const renderSnapshot = (
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
     ctx.fillText('CLICK', strikePreview.x, strikePreview.y - strikePreview.r - 6)
+    ctx.restore()
+  }
+
+  if (portalPreview) {
+    ctx.save()
+    ctx.strokeStyle = COLORS.portal
+    ctx.fillStyle = 'rgba(122, 165, 255, 0.08)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(portalPreview.x, portalPreview.y, portalPreview.r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(portalPreview.x - 10, portalPreview.y)
+    ctx.lineTo(portalPreview.x + 10, portalPreview.y)
+    ctx.moveTo(portalPreview.x, portalPreview.y - 10)
+    ctx.lineTo(portalPreview.x, portalPreview.y + 10)
+    ctx.stroke()
     ctx.restore()
   }
 }
