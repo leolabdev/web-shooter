@@ -577,7 +577,7 @@ function App() {
                         {room.fillWithBots
                           ? ` · Bots: ${room.botCount} (${room.botDifficulty})`
                           : ''}
-                        {room.maxHp ? ` · HP ${room.maxHp}` : ''}
+                        {/*{room.maxHp ? ` · HP ${room.maxHp}` : ''}*/}
                       </p>
                     </div>
                     <button
