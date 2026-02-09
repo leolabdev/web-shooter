@@ -8,8 +8,9 @@ import type {
 import { RoomManager } from "./roomManager";
 
 const httpServer = createServer();
+const corsOrigin = process.env.CORS_ORIGIN ?? "*";
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-    cors: { origin: "*" },
+    cors: { origin: corsOrigin },
 });
 const roomManager = new RoomManager(io);
 const broadcastRoomsList = () => {
@@ -54,24 +55,24 @@ io.on("connection", (socket) => {
     socket.on(
         "room:create",
         ({ name, maxPlayers, isPrivate, fillWithBots, botCount, botDifficulty, maxHp }) => {
-        const clampedMax = clampMaxPlayers(maxPlayers);
-        const room = roomManager.createRoom(
-            { id: socket.id, name: normalizeName(name) },
-            {
-                maxPlayers: clampedMax,
-                isPrivate: !!isPrivate,
-                fillWithBots: !!fillWithBots,
-                botCount: clampBotCount(botCount, clampedMax),
-                botDifficulty: normalizeBotDifficulty(botDifficulty),
-                maxHp: clampMaxHp(maxHp),
-            },
-        );
-        socket.join(room.id);
-        socket.emit("room:created", { roomId: room.id, playerId: socket.id });
-        socket.emit("chat:history", { messages: room.getChatHistory() });
-        room.ensureBots();
-        broadcastRoomsList();
-    });
+            const clampedMax = clampMaxPlayers(maxPlayers);
+            const room = roomManager.createRoom(
+                { id: socket.id, name: normalizeName(name) },
+                {
+                    maxPlayers: clampedMax,
+                    isPrivate: !!isPrivate,
+                    fillWithBots: !!fillWithBots,
+                    botCount: clampBotCount(botCount, clampedMax),
+                    botDifficulty: normalizeBotDifficulty(botDifficulty),
+                    maxHp: clampMaxHp(maxHp),
+                },
+            );
+            socket.join(room.id);
+            socket.emit("room:created", { roomId: room.id, playerId: socket.id });
+            socket.emit("chat:history", { messages: room.getChatHistory() });
+            room.ensureBots();
+            broadcastRoomsList();
+        });
 
     socket.on("room:join", ({ roomId, name }) => {
         const normalizedRoomId = normalizeRoomId(roomId);
@@ -178,4 +179,5 @@ io.on("connection", (socket) => {
     });
 });
 
-httpServer.listen(8080, () => console.log("server on :8080"));
+const port = Number(process.env.PORT) || 8080;
+httpServer.listen(port, () => console.log(`server on :${port}`));

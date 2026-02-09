@@ -26,7 +26,9 @@ export type WsInEvent =
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
 export const connectSocket = () => {
-  const socket: ClientSocket = io('http://localhost:8080')
+  const envUrl = import.meta.env.VITE_SERVER_URL as string;
+
+  const socket: ClientSocket = io(envUrl)
 
   const wsIn$ = new Observable<WsInEvent>((subscriber) => {
     const onRoomCreated = (payload: RoomCreatedPayload) =>
