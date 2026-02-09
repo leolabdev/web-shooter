@@ -2,18 +2,20 @@ services:
   - type: web
     name: multiverse-arena-server
     plan: free
-    buildCommand: npm install && npm -w server run build
+    buildCommand: npm ci && npm -w server run build
     startCommand: npm -w server run start
     autoDeploy: true
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: CORS_ORIGIN
-        value: https://REPLACE_ME.onrender.com
     runtime: node
-  - type: web
+
+  - type: static
     name: multiverse-arena-client
-    buildCommand: npm install && npm -w client run build
+    buildCommand: npm ci && npm -w client run build
     staticPublishPath: client/dist
     autoDeploy: true
     envVars:
       - key: VITE_SERVER_URL
-        value: https://REPLACE_ME.onrender.com
+        value: https://multiverse-arena-server.onrender.com
