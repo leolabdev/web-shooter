@@ -27,8 +27,9 @@ const normalizeName = (name: string): string => {
 };
 
 const clampMaxPlayers = (value: number | undefined): number => {
-    if (!Number.isFinite(value)) return 8;
-    return Math.min(12, Math.max(2, Math.floor(value)));
+    const safeValue =
+        typeof value === "number" && Number.isFinite(value) ? value : 8;
+    return Math.min(12, Math.max(2, Math.floor(safeValue)));
 };
 
 const normalizeBotDifficulty = (
@@ -39,13 +40,15 @@ const normalizeBotDifficulty = (
 };
 
 const clampBotCount = (value: number | undefined, maxPlayers: number): number => {
-    if (!Number.isFinite(value)) return 0;
-    return Math.min(Math.max(0, Math.floor(value)), maxPlayers - 1);
+    const safeValue =
+        typeof value === "number" && Number.isFinite(value) ? value : 0;
+    return Math.min(Math.max(0, Math.floor(safeValue)), maxPlayers - 1);
 };
 
 const clampMaxHp = (value: number | undefined): number => {
-    if (!Number.isFinite(value)) return 5;
-    return Math.min(100, Math.max(1, Math.floor(value)));
+    const safeValue =
+        typeof value === "number" && Number.isFinite(value) ? value : 5;
+    return Math.min(100, Math.max(1, Math.floor(safeValue)));
 };
 
 io.on("connection", (socket) => {

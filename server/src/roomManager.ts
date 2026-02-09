@@ -103,6 +103,7 @@ export class RoomManager {
         fillWithBots: boolean;
         botCount: number;
         botDifficulty: "easy" | "normal" | "hard";
+        maxHp: number;
     }[] {
         return Array.from(this.rooms.values())
             .filter((room) => !room.isPrivate)
